@@ -262,7 +262,7 @@ def compoundArrays(array_stack, tiff_tags, arrays_dict):
     return array_stack, tiff_tags
 
 
-def generateStack(loc_NAIPFile, base_dir=r"M:\Data", veg_indicies=["NDVI", "SAVI", "OSAVI", "MSAVI2", "EVI2"], overwrite=False): #, training_stack_dir, naip_band_order, veg_indicies):
+def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI", "OSAVI", "MSAVI2", "EVI2"], overwrite=False): #, training_stack_dir, naip_band_order, veg_indicies):
     #print("Starting on NAIP File: %s" % loc_NAIPFile)
 
     # Identify and output directory - create if necessary

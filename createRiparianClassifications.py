@@ -29,18 +29,18 @@ from joblib import Parallel, delayed
 
 
 def getFullNAIPPath(naip_file, naipdir):
-    for root,dirs,files in os.walk(naipdir):
+    for root, dirs, files in os.walk(naipdir):
         for file in files:
             if naip_file in file:
-                return os.path.join(root,file)
-    
+                return os.path.join(root, file)
+
     logging.error("Unable to find naip file %s in %s. Exiting" % (naip_file, naipdir))
     raise Exception
 
 
 def findSTDDevFile(dir, naip_file, band_num, windowsize):
-    #findFile(os.path.join(std3px_dir, bandnum), ffile)
-    
+    # findFile(os.path.join(std3px_dir, bandnum), ffile)
+
     window_dir = os.path.join(dir, "StdDev_" + str(windowsize) + "px")
     utilities.useDirectory(window_dir)
     band_dir = os.path.join(window_dir, "band" + band_num)
@@ -53,7 +53,7 @@ def findSTDDevFile(dir, naip_file, band_num, windowsize):
             if fname in file:
                 fpath = os.path.join(root, file)
                 return fpath
-                
+
     if "fpath" not in locals():
         standardDeviation(naip_file, dir, window_size=windowsize, overwrite=False)
 
@@ -79,7 +79,7 @@ def createSubSetLandsat(naip_path, landsat_file, opath, overwrite=False):
     ofile = "Landsat8_" + os.path.basename(naip_path)
 
     landsat_opath = os.path.join(opath, ofile)
-    
+
     if not os.path.exists(landsat_opath) or overwrite:
         start = datetime.now()
         reference_f = gdal.Open(naip_path)
@@ -98,16 +98,18 @@ def createSubSetLandsat(naip_path, landsat_file, opath, overwrite=False):
             resampletype = "bilinear"
         else:
             resampletype = "bilinear"
-            #resampletype = "near"
+            # resampletype = "near"
 
         gdal_warp = "gdalwarp -overwrite -tap -r %s -t_srs %s -tr %s %s -te_srs %s -te %s %s %s %s %s %s" % (
-            resampletype, proj, resx, resy, proj, str(minx), str(miny), str(maxx), str(maxy), landsat_file, landsat_opath)
+            resampletype, proj, resx, resy, proj, str(minx), str(miny), str(maxx), str(maxy), landsat_file,
+            landsat_opath)
         logging.debug("Executing gdal_warp operation on %s for footprint of naip file %s" % (landsat_file, naip_path))
         os.system(gdal_warp)
 
         logging.debug("\tFinished qquad for %s landsat in %s" % (landsat_file, str(datetime.now() - ssl_start)))
-    
+
     return landsat_opath
+
 
 # FUNCTION TO WRITE OUT CLASSIFIED RASTER
 def write_geotiff(fname, data, geo_transform, projection, classes, COLORS, data_type=gdal.GDT_Byte):
@@ -129,7 +131,7 @@ def write_geotiff(fname, data, geo_transform, projection, classes, COLORS, data_
     band.WriteArray(data)
 
     ct = gdal.ColorTable()
-    for pixel_value in range(len(classes)+1):
+    for pixel_value in range(len(classes) + 1):
         color_hex = COLORS[pixel_value]
         r = int(color_hex[1:3], 16)
         g = int(color_hex[3:5], 16)
@@ -161,12 +163,13 @@ def getQQuadFromNAIP(f):
     qquad = fname.split("_")[1] + "_" + fname.split("_")[2]
     return qquad
 
+
 """
 def get_STDDev_VRT(naip_file, qquad_vrt_dir):
     naip_path = getFullNAIPPath(naip_file, naip_dir)
     qquad = getQQuadFromNAIP(naip_file)
     rasters_stddev = []
-    
+
     rasters_stddev += standardDeviation(naip_path, base_datadir, window_size=3, overwrite=False)
     rasters_stddev += standardDeviation(naip_path, base_datadir, window_size=5, overwrite=False)
     rasters_stddev += standardDeviation(naip_path, base_datadir, window_size=10, overwrite=False)
@@ -174,7 +177,7 @@ def get_STDDev_VRT(naip_file, qquad_vrt_dir):
     #for bandnum in range(1, 5):
     #    bandnum = "band" + str(bandnum)
     #    ffile = "stddev_" + os.path.splitext(naip_file)[0] + bandnum + ".tif"
-        
+
     #   rasters_stddev.append(os.path.abspath(findFile(os.path.join(std3px_dir, bandnum), ffile)).replace("\\", "/"))
     #    rasters_stddev.append(os.path.abspath(findFile(os.path.join(std5px_dir, bandnum), ffile)).replace("\\", "/"))
     #    rasters_stddev.append(os.path.abspath(findFile(os.path.join(std10px_dir, bandnum), ffile)).replace("\\", "/"))
@@ -193,12 +196,13 @@ def get_STDDev_VRT(naip_file, qquad_vrt_dir):
 def get_GaussianFile(naip_file):
     #naip_path = getFullNAIPPath(naip_file, naip_dir)
     qquad = getQQuadFromNAIP(naip_file)
-    
+
     gaussfile = gaussianCalc(naip_file, base_datadir, sigma=1, overwrite=False)
-    
+
     return gaussfile
 """
-    
+
+
 def get_VegIndicies_VRT(naip_file, qquad_vrt_dir):
     print(naip_file)
     qquad = getQQuadFromNAIP(naip_file)
@@ -212,7 +216,7 @@ def get_VegIndicies_VRT(naip_file, qquad_vrt_dir):
 
     naipvis_vrt_dir = os.path.join(qquad_vrt_dir, "naipvis")
     vrt_naipvis = os.path.join(naipvis_vrt_dir, qquad + "_naipvis.vrt")
-    
+
     if not os.path.exists(vrt_naipvis):
         build_vrt = "gdalbuildvrt -overwrite -separate %s %s" % (vrt_naipvis, " ".join(rasters_float))
         os.system(build_vrt)
@@ -220,22 +224,22 @@ def get_VegIndicies_VRT(naip_file, qquad_vrt_dir):
     return vrt_naipvis
 
 
-def createClassifiedFile(loc_NAIPFile,  rf_classifier, rf_args, naip_data_dir, valleybottom_loc, mltype="RF", overwrite=False):
+def createClassifiedFile(loc_NAIPFile, rf_classifier, rf_args, mltype="RF", overwrite=False):
     beg = datetime.now()
     print("Starting on qquad: %s" % loc_NAIPFile)
     logger.debug("Starting on qquad: %s" % loc_NAIPFile)
 
     file = os.path.basename(loc_NAIPFile)
-    
+
     qquad = getQQuadFromNAIP(file)
-    
+
     if mltype == "RF":
-        output_fname = "{}_D{}E{}MPL{}_{}.tif".\
+        output_fname = "{}_D{}E{}MPL{}_{}.tif". \
             format(mltype, rf_args["maxdepth"], rf_args["n_est"], rf_args["min_per_leaf"], qquad)
     else:
         print("Unknown classifier type '{}' specified. Exiting...")
-        raise(ValueError)
-        
+        raise (ValueError)
+
     loc_classified_file = os.path.join(loc_classifiedQuarterQuads, output_fname)
     print("loc_classified_file; ", loc_classified_file)
 
@@ -281,10 +285,9 @@ def createClassifiedFile(loc_NAIPFile,  rf_classifier, rf_args, naip_data_dir, v
         except RuntimeError as e:
             report_and_exit(str(e))
 
-
         training_raster = generateStack(loc_NAIPFile)
         # CREATE NP DATASTACK FROM ALL RASTERS
-        #bands_data = np.dstack(bands_data)
+        # bands_data = np.dstack(bands_data)
         # CREATE VARIABLES OF ROWS, COLUMNS, AND NUMBER OF BANDS
         with rio.open(training_raster) as tras:
             print(tras)
@@ -298,7 +301,7 @@ def createClassifiedFile(loc_NAIPFile,  rf_classifier, rf_args, naip_data_dir, v
         # CREATE EMPTY ARRAY WITH SAME SIZE AS RASTER
         flat_pixels = scikit_array.reshape((n_samples, n_bands))
 
-        classes = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13']
+        classes = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14']
 
         # A list of colors for each class
         COLORS = [
@@ -306,16 +309,17 @@ def createClassifiedFile(loc_NAIPFile,  rf_classifier, rf_args, naip_data_dir, v
             "#00af11",  # 1 - Vegetation - Thick
             "#00e513",  # 2 - Vegetation - Thin
             "#e9ff5a",  # 3 - Herbaceous
-            "#f1ac34",  # 4 - Barren - Light
-            "#a9852e",  # 5 - Barren - Dark
-            "#2759ff",  # 6 - Water
-            "#efefef",  # 7 - Roof - White
-            "#d65133",  # 8 - Roof - Red
-            "#cecece",  # 9 - Roof - Grey
-            "#a0a0a0",  # 10 - Impervious - Light
-            "#555555",  # 11 - Impervious - Dark
-            "#000000",  # 12 - Shadows
-            "#00734C"   # 13 - Vegetation - Irrigated
+            "#00734C",  # 4 - Vegetation - Irrigated
+            "#f1ac34",  # 5 - Barren - Light
+            "#a9852e",  # 6 - Barren - Dark
+            "#2759ff",  # 7 - Open Water - Shallow
+            "#001866",  # 8 - Open Water - Deep
+            "#efefef",  # 9 - Roof - White
+            "#d65133",  # 10 - Roof - Red
+            "#cecece",  # 11 - Roof - Grey
+            "#a0a0a0",  # 12 - Impervious - Light
+            "#555555",  # 13 - Impervious - Dark
+            "#000000",  # 14 - Shadows
         ]
 
         print("Classifying...")
@@ -326,7 +330,7 @@ def createClassifiedFile(loc_NAIPFile,  rf_classifier, rf_args, naip_data_dir, v
             print("Some values are NaN. Fixing...")
             flat_pixels = np.where(flat_pixels == np.NaN, np.finfo(np.float32).max, flat_pixels)
         """
-        #try:
+        # try:
         result = rf_classifier.predict(flat_pixels)
         # Reshape the result: split the labeled pixels into rows to create an image
         classification = result.reshape((rows, cols))
@@ -335,32 +339,34 @@ def createClassifiedFile(loc_NAIPFile,  rf_classifier, rf_args, naip_data_dir, v
         # TODO - Rewrite this to use rasterio for consistency
         write_geotiff(loc_classified_file, classification, geo_transform, proj, classes, COLORS)
         logging.info("\tCreated classified file in %s" % (str(datetime.now() - cl_start)))
-        #except (ValueError) as e:
-        #logging.info("-----------BAD VALUES FOR PREDICTORS. SKIPPING FILE %s\n%s" % (file, str(e)))
-        #return None
-        
+        # except (ValueError) as e:
+        # logging.info("-----------BAD VALUES FOR PREDICTORS. SKIPPING FILE %s\n%s" % (file, str(e)))
+        # return None
+
         del bands_data
         del flat_pixels
-        
+
     else:
         logging.info("LandCover file %s exists and no overwrite." % loc_classified_file)
 
-
-    data_dir = utils.getParentDir(loc_classifiedQuarterQuads)
-    o_veg_loc = os.path.join(data_dir, "RiparianClass_VBs")
+    """
+    o_veg_loc = r"Q:\GoogleDrive\AridRiparianProject\WorkingDirectory\Data\RiparianClass_VBs"
     utilities.useDirectory(o_veg_loc)
-        
+
     quadrant_loc = os.path.join(o_veg_loc, qquad[:5])
     utilities.useDirectory(quadrant_loc)
-    
+
     # not writing out density calculations
     #dq_path = os.path.join(degress_quadrant_loc, denseVeg_file)
     #sq_path = os.path.join(degress_quadrant_loc, sparseVeg_file)
-    
+
     riparian_class_qquad = os.path.join(quadrant_loc, "RiparianClassification_" + qquad + ".tif")
 
     if not os.path.exists(riparian_class_qquad) or overwrite:
-        createRiparianClass(loc_classified_file, riparian_class_qquad, qquad, naip_data_dir, valleybottom_loc)
+        createRiparianClass(loc_classified_file, riparian_class_qquad, qquad)
+
+    shutil.copy(riparian_class_qquad, r"Q:\GoogleDrive\AridRiparianProject\WorkingDirectory\Data\Pinal_AOI")
+    """
 
     logger.debug("COMPLETED riparian classification. Finished in %s" % (str(datetime.now() - beg)))
     logger.debug("_____________________________________________________________________________________")
@@ -368,52 +374,60 @@ def createClassifiedFile(loc_NAIPFile,  rf_classifier, rf_args, naip_data_dir, v
     return loc_classified_file
 
 
-def createRiparianClass(lc_raster, o_file, qquad, naip_data_dir, VB_raster_loc):
+def createRiparianClass(lc_raster, o_file, qquad):
     rc_start = datetime.now()
     logging.info("\tClassifying riparian zones for %s" % lc_raster)
     with rio.open(lc_raster) as class_file:
-        class_array = class_file.read(1)#_band(1)
+        class_array = class_file.read(1)  # _band(1)
         kwargs = class_file.profile
-    
+
     # Get average densities of each class across the whole raster.
-    # TODO - Update this to be evaluate on on something more specific than the qquad area (e.g. ecoregion)
+    # TO DO - Updatet this to evaluate on something more specific than the qquad area
     dense_veg_array = np.where(class_array == 1, 1, 0)
     dense_file_avg = np.mean(dense_veg_array)
     sparse_veg_array = np.where(class_array == 2, 1, 0)
     sparse_file_avg = np.mean(sparse_veg_array)
-    
-    sparse_veg_array_localmean = ndimage.uniform_filter(sparse_veg_array.astype(np.float32), size=vaa_diameter, mode='constant')
-    dense_veg_array_localmean = ndimage.uniform_filter(dense_veg_array.astype(np.float32), size=vaa_diameter, mode='constant')
-    
+
+    sparse_veg_array_localmean = ndimage.uniform_filter(sparse_veg_array.astype(np.float32), size=vaa_diameter,
+                                                        mode='constant')
+    dense_veg_array_localmean = ndimage.uniform_filter(dense_veg_array.astype(np.float32), size=vaa_diameter,
+                                                       mode='constant')
+
     # ------------------------------------------------
-    # CRITICAL : Identify the splits where xero, meso, and hydro will be identified 
-    # based on density of sparse and thick vegetation
+    # CRITICAL : Identify the splits where xero, meso, and hydro will be identified
+    # based on density ofsparse and thick vegetation
     sparse_xero_lowlimit = sparse_file_avg + np.std(sparse_veg_array_localmean)
-    sparse_meso_lowlimit = sparse_file_avg + (1-sparse_file_avg)*0.7
-    sparse_hydro_lowlimit = sparse_file_avg + (1-sparse_file_avg)*0.9
-    
+    sparse_meso_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * 0.7
+    sparse_hydro_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * 0.9
+
     dense_xero_lowlimit = dense_file_avg + np.std(dense_veg_array_localmean)
-    dense_meso_lowlimit = dense_file_avg + (1-dense_file_avg)*0.7
-    dense_hydro_lowlimit = dense_file_avg + (1-dense_file_avg)*0.9
-    
+    dense_meso_lowlimit = dense_file_avg + (1 - dense_file_avg) * 0.7
+    dense_hydro_lowlimit = dense_file_avg + (1 - dense_file_avg) * 0.9
+
     # ------------------------------------------------
-    
+
     # Reassign pixel values based on density assessment
-    sparse_local_xero  = np.where(sparse_veg_array_localmean > sparse_xero_lowlimit,  1, 0) # xero (1) if true, upland (0) if false
-    sparse_local_meso  = np.where(sparse_veg_array_localmean > sparse_meso_lowlimit,  2, 0) # meso (2) if true, upland (0) if false
-    sparse_local_hydro = np.where(sparse_veg_array_localmean > sparse_hydro_lowlimit, 3, 0) # hydro (3) if true, upland (0) if false
+    sparse_local_xero = np.where(sparse_veg_array_localmean > sparse_xero_lowlimit, 1,
+                                 0)  # xero (1) if true, upland (0) if false
+    sparse_local_meso = np.where(sparse_veg_array_localmean > sparse_meso_lowlimit, 2,
+                                 0)  # meso (2) if true, upland (0) if false
+    sparse_local_hydro = np.where(sparse_veg_array_localmean > sparse_hydro_lowlimit, 3,
+                                  0)  # hydro (3) if true, upland (0) if false
     # For some reason can't take numpy.maximum from more than two arrays at once
-    sparse_combine = np.maximum(sparse_local_xero, sparse_local_meso)
+    sparse_combine = np.maximum(sparse_local_xero, sparse_local_meso)  # , sparse_local_hydro)
     sparse_combine = np.maximum(sparse_combine, sparse_local_hydro)
-        
-    dense_local_xero  = np.where(dense_veg_array_localmean > dense_xero_lowlimit,  1, 0) # xero (1) if true, upland (0) if false
-    dense_local_meso  = np.where(dense_veg_array_localmean > dense_meso_lowlimit,  2, 0) # meso (2) if true, upland (0) if false
-    dense_local_hydro = np.where(dense_veg_array_localmean > dense_hydro_lowlimit, 3, 0) # hydro (3) if true, upland (0) if false
+
+    dense_local_xero = np.where(dense_veg_array_localmean > dense_xero_lowlimit, 1,
+                                0)  # xero (1) if true, upland (0) if false
+    dense_local_meso = np.where(dense_veg_array_localmean > dense_meso_lowlimit, 2,
+                                0)  # meso (2) if true, upland (0) if false
+    dense_local_hydro = np.where(dense_veg_array_localmean > dense_hydro_lowlimit, 3,
+                                 0)  # hydro (3) if true, upland (0) if false
     # For some reason can't take numpy.maximum from more than two arrays at once
-    dense_combine = np.maximum(dense_local_xero, dense_local_meso)
+    dense_combine = np.maximum(dense_local_xero, dense_local_meso)  # , sparse_local_hydro)
     dense_combine = np.maximum(dense_combine, dense_local_hydro)
-    
-    # COMPARISON OF DENSITY VALUES OF BOTH RASTERS AT EACH PIXEL FOR 
+
+    # COMPARISON OF DENSITY VALUES OF BOTH RASTERS AT EACH PIXEL FOR
     # DETERMINATION. ESSENTAILLY A DECISION TREE
     p = np.where(dense_combine == 0, np.where(sparse_combine == 0, 0, 0), 0)
     o = np.where(dense_combine == 0, np.where(sparse_combine == 1, 1, p), p)
@@ -431,19 +445,19 @@ def createRiparianClass(lc_raster, o_file, qquad, naip_data_dir, VB_raster_loc):
     c = np.where(dense_combine == 3, np.where(sparse_combine == 1, 2, d), d)
     b = np.where(dense_combine == 3, np.where(sparse_combine == 2, 3, c), c)
     riparian = np.where(dense_combine == 3, np.where(sparse_combine == 3, 3, b), b)
-    
+
     kwargs.update(
         dtype=np.uint8,
         nodata=0,
         compress='lzw'
     )
 
-    valleybottom_ras = findVBRaster(qquad, naip_data_dir, VB_raster_loc)
-    
+    valleybottom_ras = findVBRaster(qquad)
+
     with rio.open(valleybottom_ras) as vb_raster:
         vb_array = vb_raster.read(1).astype(np.float32)
-    
-    #print("Clipping to Valley Bottoms")
+
+    # print("Clipping to Valley Bottoms")
     clipped_riparian = np.where(vb_array > 1, riparian, 0)
 
     with rio.open(o_file, 'w', **kwargs) as dst:
@@ -452,26 +466,26 @@ def createRiparianClass(lc_raster, o_file, qquad, naip_data_dir, VB_raster_loc):
         dst.write_colormap(
             1, {
                 0: (255, 255, 255),
-                1: (186,228,179),
-                2: (116,196,118),
-                3: (35,139,69)})
+                1: (186, 228, 179),
+                2: (116, 196, 118),
+                3: (35, 139, 69)})
         cmap = dst.colormap(1)
-        
-    logging.info("\tFinished riparian classification in %s" % (str(datetime.now()-rc_start)))
+
+    logging.info("\tFinished riparian classification in %s" % (str(datetime.now() - rc_start)))
 
 
-def findVBRaster(qquad, naip_data_dir, valley_bottom_raster, overwrite=False):
+def findVBRaster(qquad, overwrite=False):
     vb_start = datetime.now()
     logging.debug("Starting creation of subset of valley bottom...")
-    naip_path = getFullNAIPPath(qquad, naip_data_dir)
+    naip_path = getFullNAIPPath(qquad, naip_dir)
     ofile = "ValleyBottom_" + qquad + ".tif"
 
     o_path = os.path.join(loc_valleybottoms, ofile)
 
-    reference_f = gdal.Open(valley_bottom_raster)
+    reference_f = gdal.Open(VBET_VB_loc)
     geo_transform = reference_f.GetGeoTransform()
     sproj = reference_f.GetProjectionRef()
-    
+
     # TODO - Duplicative scripting. Exisits twice in this file and also in the VBET classification
     if not os.path.exists(o_path) or overwrite:
         reference_f = gdal.Open(naip_path)
@@ -485,14 +499,15 @@ def findVBRaster(qquad, naip_data_dir, valley_bottom_raster, overwrite=False):
         miny = maxy + (resy * reference_f.RasterYSize)
 
         resampletype = "bilinear"
-        
+
         gdal_warp = "gdalwarp -overwrite -tap -r %s -s_srs %s -t_srs %s -tr %s %s -te_srs %s -te %s %s %s %s %s %s" % (
-            resampletype, sproj, tproj, resx, resy, tproj, str(minx), str(miny), str(maxx), str(maxy), valley_bottom_raster, o_path)
-        #print("Executing gdal_warp operation on %s for footprint of naip file %s" % (o_path, naip_path))
+            resampletype, sproj, tproj, resx, resy, tproj, str(minx), str(miny), str(maxx), str(maxy), VBET_VB_loc,
+            o_path)
+        # print("Executing gdal_warp operation on %s for footprint of naip file %s" % (o_path, naip_path))
         os.system(gdal_warp)
 
         logging.debug("\tFinished VB subset in %s" % (str(datetime.now() - vb_start)))
-    
+
     return o_path
 
 
@@ -504,7 +519,7 @@ def apply_and_concat(dataframe, field, func, column_names):
 
 
 def calculateGeom(row):
-    #print(row)
+    # print(row)
     geom = row["geometry"]
     if row['PROJ'] == "NAD83 / UTM zone 11N":
         x = geom.centroid.x
@@ -519,7 +534,6 @@ def calculateGeom(row):
 
 
 def extractToPoints(training_points, out_file, data_dir, landsatdir, overwrite=False):
-
     def get_values(geom):
         # print(row)
         # geom = row['geometry']
@@ -543,7 +557,7 @@ def extractToPoints(training_points, out_file, data_dir, landsatdir, overwrite=F
         for val in rasNDWI.sample([(x, y)]):
             values += np.ndarray.tolist(val)
         """
-        #print(geom)
+        # print(geom)
         for val in ras_stack.sample([(x, y)]):
             values += np.ndarray.tolist(val)
 
@@ -567,7 +581,7 @@ def extractToPoints(training_points, out_file, data_dir, landsatdir, overwrite=F
         # if "class_points" not in locals():
         #    logging.debug("READING IN %s as training_points" % training_points)
         training_data_df = gpd.read_file(training_points, crs={'init': 'epsg:26912'})
-        #print("Columns: ", training_data_df.columns)
+        # print("Columns: ", training_data_df.columns)
 
         if "utm_geom" not in training_data_df:
             logging.debug("ADDING COLUMN 'utm_geom' WITH CORRECT UTM COORDINATES FOR EACH QUARTER QUAD")
@@ -587,10 +601,10 @@ def extractToPoints(training_points, out_file, data_dir, landsatdir, overwrite=F
                     column = ras_stack.tags(i)['NAME']
                     band_columns.append(column)
                     training_data_df[column] = np.NaN
-        #for column in band_columns:
+        # for column in band_columns:
 
 
-        #print("COLUMNS", training_data_df.columns)
+        # print("COLUMNS", training_data_df.columns)
 
         net_percentage = 0.0
         # ITERATE THROUGH DATAFRAME IN GROUPS BY NAIP_FILE. KEEPS US FROM OPENING/CLOSING RASTERS FOR EACH POINT - INSTEAD FOR EACH GROUP
@@ -600,7 +614,7 @@ def extractToPoints(training_points, out_file, data_dir, landsatdir, overwrite=F
             loc_NAIPFile.replace("\\", "/")  # normalize for windows paths
 
             # LOOK FOR RASTERS FROM WHICH VALUES WILL BE EXTRACTED
-            #file = os.path.basename(loc_NAIPFile)
+            # file = os.path.basename(loc_NAIPFile)
 
             """
             vrt_naipvis = get_VegIndicies_VRT(loc_NAIPFile, qquad_vrt_dir)
@@ -631,7 +645,6 @@ def extractToPoints(training_points, out_file, data_dir, landsatdir, overwrite=F
                     training_data_df.loc[
                         training_data_df.NAIP_FILE == loc_NAIPFile, band_columns] = \
                         training_data_df.loc[training_data_df.NAIP_FILE == loc_NAIPFile, "utm_geom"].apply(get_values)
-
 
             """
             if group["NDSI"].isnull().values.any():
@@ -685,11 +698,11 @@ def getClassifier(classifier_file, train_data, rf_rasters, args, createClassifie
         # TRAIN RANDOM FORESTS
         rf_start = datetime.now()
         logger.info("Beginning Random Forest Train")
-        #maxdepth = 400
-        #n_est = 40
-        #n_job = 1
-        #min_per_leaf = 50
-        #crit = "entropy"  # gini or entropy
+        # maxdepth = 400
+        # n_est = 40
+        # n_job = 1
+        # min_per_leaf = 50
+        # crit = "entropy"  # gini or entropy
 
         rf_model = RandomForestClassifier(verbose=1, max_depth=args["maxdepth"], n_estimators=args["n_est"],
                                           n_jobs=args["n_job"], min_samples_leaf=args["min_per_leaf"],
@@ -717,11 +730,11 @@ def createClassification(base_datadir, naip_dir=False):
 
     training_data_dir = os.path.join(base_datadir, "inital_model_inputs")
 
-    #ndvi_dir = utils.useDirectory(os.path.join(base_datadir, "NDVI"))
-    #savi_dir = utils.useDirectory(os.path.join(base_datadir, "SAVI"))
-    #osavi_dir = utils.useDirectory(os.path.join(base_datadir, "OSAVI"))
-    #msavi2_dir = utils.useDirectory(os.path.join(base_datadir, "MSAVI2"))
-    #evi2_dir = utils.useDirectory(os.path.join(base_datadir, "EVI2"))
+    # ndvi_dir = utils.useDirectory(os.path.join(base_datadir, "NDVI"))
+    # savi_dir = utils.useDirectory(os.path.join(base_datadir, "SAVI"))
+    # osavi_dir = utils.useDirectory(os.path.join(base_datadir, "OSAVI"))
+    # msavi2_dir = utils.useDirectory(os.path.join(base_datadir, "MSAVI2"))
+    # evi2_dir = utils.useDirectory(os.path.join(base_datadir, "EVI2"))
     ndwi_qquad_dir = utils.useDirectory(os.path.join(base_datadir, "NDWI"))
     ndsi_qquad_dir = utils.useDirectory(os.path.join(base_datadir, "NDSI"))
 
@@ -730,9 +743,8 @@ def createClassification(base_datadir, naip_dir=False):
     # std10px_dir = os.path.join(base_datadir, "StdDev_10px")
 
     base_landsatdir = utils.useDirectory(os.path.join(base_datadir, "Landsat8"))
-    #landsat_qquad_dir = utils.useDirectory(os.path.join(base_landsatdir, "byNAIPDOY_QQuads"))
+    # landsat_qquad_dir = utils.useDirectory(os.path.join(base_landsatdir, "byNAIPDOY_QQuads"))
     valleybottoms_dir = utils.useDirectory(os.path.join(base_datadir, "ValleyBottoms"))
-    global loc_valleybottoms
     loc_valleybottoms = utils.useDirectory(os.path.join(valleybottoms_dir, "VBET_ValleyBottoms"))
 
     # LOCATION OF THE LANDSAT FILE
@@ -762,7 +774,8 @@ def createClassification(base_datadir, naip_dir=False):
     aoi = gpd.read_file(os.path.join(training_data_dir, "PinalCounty_AOI.gpkg"))
 
     valleybottoms_dir = utils.useDirectory(os.path.join(base_datadir, "ValleyBottoms"))
-    VBET_VB_loc = os.path.join(valleybottoms_dir, "NHD_ValleyBottoms.tif")
+    loc_valleybottoms = utils.useDirectory(os.path.join(valleybottoms_dir, "VBET_ValleyBottoms"))
+    VBET_VB_loc = os.path.join(valleybottoms_dir, "VBET_ValleyBottoms_20180624.tif")
 
     # DEFINE THE PROJECTION USED OVER ARIZONA. USED FOR TRANSLATING POINT GEOMETRY LATER ON
     utm11 = Proj(init="epsg:26911")
@@ -784,7 +797,7 @@ def createClassification(base_datadir, naip_dir=False):
     #print(rasters_names)
     """
 
-    classes = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13']
+    classes = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14']
 
     loc_out_join = Create_Classification_Points.joinProjectionAndNAIP(loc_class_polygons, naip_dir, loc_usgs_qquads,
                                                                       overwrite=False)
@@ -795,7 +808,8 @@ def createClassification(base_datadir, naip_dir=False):
     loc_points_wRaster_extracts = loc_points_in_poly[:-4] + "_extracts.shp"
 
     # EXTRACT RASTER VALUES TO POINTS
-    training_info = extractToPoints(loc_points_in_poly, loc_points_wRaster_extracts, base_datadir, base_landsatdir, overwrite=False)
+    training_info = extractToPoints(loc_points_in_poly, loc_points_wRaster_extracts, base_datadir, base_landsatdir,
+                                    overwrite=False)
 
     class_points = training_info["training_points"]
     band_names = training_info["band_names"]
@@ -838,9 +852,8 @@ def createClassification(base_datadir, naip_dir=False):
 
     irods_sess, irods_files = utils.getFilesonDE()
 
-
     print("-------------------STARTING CREATION FOR AOI-----------------------------")
-    #aoi.crs = fiona.crs.from_epsg(2163)
+    # aoi.crs = fiona.crs.from_epsg(2163)
     print(aoi.crs)
 
     footprints = gpd.read_file(loc_usgs_qquads)
@@ -859,15 +872,15 @@ def createClassification(base_datadir, naip_dir=False):
         print("Error - no qquads found intersecting AOI. Exiting")
         raise Exception
 
-    Parallel(n_jobs=3)(delayed(createClassifiedFile)(naip_file, rf, rf_args, naip_dir, VBET_VB_loc, overwrite=False) for naip_file in aoi_qquads)
-    #beg = datetime.now()
-    #logger.debug("Starting on qquad: %s" % qquad_name)
-    #createClassifiedFile(fpath, rf, rf_args, overwrite=False)
-    #logger.debug("COMPLETED riparian classification. Finished in %s" % (str(datetime.now() - beg)))
-    #logger.debug("_____________________________________________________________________________________")
+    Parallel(n_jobs=3)(
+        delayed(createClassifiedFile)(naip_file, rf, rf_args, overwrite=True) for naip_file in aoi_qquads)
+    # beg = datetime.now()
+    # logger.debug("Starting on qquad: %s" % qquad_name)
+    # createClassifiedFile(fpath, rf, rf_args, overwrite=False)
+    # logger.debug("COMPLETED riparian classification. Finished in %s" % (str(datetime.now() - beg)))
+    # logger.debug("_____________________________________________________________________________________")
 
     print("-------------------FINISHED CREATING FOR AOI-----------------------------")
-
 
     print("------------------- STARTING CREATION FOR TRAINING QUADS -----------------------------")
     files_list = []
@@ -884,10 +897,10 @@ def createClassification(base_datadir, naip_dir=False):
             fullname = getFullNAIPPath(l[:-1], naip_dir)
             # print(l)
             single_comp_subset.append(fullname)
-            #if l[:-1] not in irods_files.keys():
+            # if l[:-1] not in irods_files.keys():
             #    single_comp_subset.append(fullname)
 
-            #createClassifiedFile(fullname, rf, rf_args)
+            # createClassifiedFile(fullname, rf, rf_args)
 
     Parallel(n_jobs=2)(delayed(createClassifiedFile)(naip_file, rf, rf_args) for naip_file in single_comp_subset)
     # for qquad_name in single_comp_subset:
@@ -896,7 +909,6 @@ def createClassification(base_datadir, naip_dir=False):
     # createClassifiedFile(fpath, "RF", rf, rf_args, overwrite=False)
 
     print("-------------------FINISHED CREATION FOR SUB AREA-----------------------------")
-
 
     exit()
 
@@ -967,10 +979,10 @@ if __name__ == "__main__":
     global qquad, naip_dir, loc_valleybottoms, VBET_VB_loc, \
         ndvi_dir, savi_dir, osavi_dir, msavi2_dir, evi2_dir, loc_classifiedQuarterQuads
 
-    veg_assessment_area = 0.1 # in acres
+    veg_assessment_area = 0.1  # in acres
     vaa_meters = veg_assessment_area * 4046.86
-    vaa_radius = math.sqrt(vaa_meters/math.pi)
-    vaa_diameter = vaa_radius*2
+    vaa_radius = math.sqrt(vaa_meters / math.pi)
+    vaa_diameter = vaa_radius * 2
 
     # LOCATIONS OF FOLDERS HOLDING ALL INPUT RASTER DATA
     naip_data_dir = os.path.abspath(r"Q:\Arid Riparian Project\Data\NAIP_2015_Compressed")
