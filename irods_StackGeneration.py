@@ -5,6 +5,7 @@ from __future__ import print_function
 from joblib import Parallel, delayed
 
 import os
+import shutil
 import rasterio as rio
 import numpy as np
 from collections import OrderedDict
@@ -45,10 +46,13 @@ def segmentImage(loc_NAIPFile, seg_img_dir, overwrite=False, return_data=True):
             #downloadFromDE(irods_path, landsat_opath)
             get_command = "iget -K " + irods_path
 
+            os.system(get_command)
+
             with rio.open(ofile_name) as segras:
                 seg_array = segras.read(1).astype(np.int32)
 
             os.remove(ofile_name)
+
             return seg_array
 
         seg_start = datetime.now()
@@ -75,6 +79,8 @@ def segmentImage(loc_NAIPFile, seg_img_dir, overwrite=False, return_data=True):
 
         seg_end = datetime.now()
         print("\tSegmentation took {}".format(seg_end-seg_start))
+
+    pushToDE(o_file, irods_files, irods_sess)
 
     if return_data:
         with rio.open(o_file) as ras:
@@ -202,6 +208,50 @@ def vegIndexCalc(naip_array_list, indicies):
     return vi_calcs
 
 
+def getSubSetSlope(naip_path, slope_file, odir, overwrite=False):
+    ssl_start = datetime.now()
+    ofile = "SlopeDeg_" + os.path.basename(naip_path)
+
+    slope_file = os.path.abspath(slope_file)
+
+    slope_opath = os.path.join(odir, ofile)
+
+    print(slope_opath)
+    if not os.path.exists(slope_opath) or overwrite:
+        start = datetime.now()
+        reference_f = gdal.Open(naip_path)
+        geo_transform = reference_f.GetGeoTransform()
+        resx = geo_transform[1]
+        resy = geo_transform[5]
+        proj = reference_f.GetProjectionRef()
+        minx = geo_transform[0]
+        maxy = geo_transform[3]
+        maxx = minx + (resx * reference_f.RasterXSize)
+        miny = maxy + (resy * reference_f.RasterYSize)
+
+        # build slope qquad from naip extent
+
+        resampletype = "bilinear"
+
+        gdal_warp = "gdalwarp -overwrite -tap -r %s -t_srs %s -tr %s %s -te_srs %s -te %s %s %s %s %s %s" % (
+            resampletype, proj, resx, resy, proj, str(minx), str(miny), str(maxx), str(maxy), slope_file,
+            slope_opath)
+        # logger.info("\tExecuting gdal_warp operation on %s for footprint of naip file %s" % (slope_file, naip_path))
+        print("Executing gdal_warp operation on %s for footprint of naip file %s" % (slope_file, naip_path))
+
+        os.system(gdal_warp)
+        # logger.info("\tFinished qquad for %s landsat in %s" % (slope_file, str(datetime.now() - ssl_start)))
+
+    with rio.open(slope_opath) as s_ras:
+        s_ras_array = s_ras.read()
+
+    # multiply by 100 conserve precision when reducing to int16 (e.g. 40.0215 degrees -> 4021)
+    s_ras_array *= 100
+
+    print("Bringing in slope array from %s ..." % slope_opath)
+    return s_ras_array.astype(np.int16)
+
+
 def getSubSetLandsat(naip_path, landsat_file, opath, overwrite=False, return_data=True):
     ssl_start = datetime.now()
     ofile = "Landsat8_" + os.path.basename(naip_path)
@@ -215,17 +265,19 @@ def getSubSetLandsat(naip_path, landsat_file, opath, overwrite=False, return_dat
             irods_path = irods_files[ofile]
             #downloadFromDE(irods_path, landsat_opath)
             get_command = "iget -K " + irods_path
+            os.system(get_command)
             
             #shutil.move(ofile, landsat_opath)
             with rio.open(ofile) as lras:
                 lras_array = lras.read()
+
+            os.remove(ofile)
 
             if "ndsi" in opath.lower() or "ndwi" in opath.lower():
                 lras_array = lras_array * 1000
 
             print("Bringing in landsat array from %s ..." % opath)
             return lras_array.astype(np.int16)
-
         
         start = datetime.now()
         reference_f = gdal.Open(naip_path)
@@ -286,6 +338,7 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
     ndsi_qquad_dir = utils.useDirectory(os.path.join(base_datadir, "NDSI"))
     ndwi_qquad_dir = utils.useDirectory(os.path.join(base_datadir, "NDWI"))
     landsat_qquad_dir = utils.useDirectory(os.path.join(base_landsatdir, "byNAIPDOY_QQuads"))
+    slope_qquad_dir = utils.useDirectory(os.path.join(base_datadir, "Slope"))
 
 
     landsat_file = os.path.os.path.join(base_landsatdir, "Landsat1to8_TOA_NAIPAcquiDate_merge_rectified.tif")
@@ -293,6 +346,8 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
     ndsi_file = os.path.join(ndsi_qquad_dir, "LandsatOLI_NDSI_30m.tif")
     # LOCATION OF THE NDWI FILE
     ndwi_file = os.path.join(ndwi_qquad_dir, "LandsatOLI_NDWI_30m.tif")
+
+    slope_file = os.path.join(slope_qquad_dir, "Slope-Degrees_AZ.tif")
 
     if not os.path.exists(training_stack_dir):
         os.mkdir(training_stack_dir)
@@ -307,16 +362,19 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
     ofile_name = os.path.basename(loc_NAIPFile)[:-4] + "_TrainingStack.tif"
     o_file = os.path.join(training_stack_dir, ofile_name)
 
+    # IF FILE ON DE, DOWNLOAD
+    if ofile_name in irods_files.keys():
+        # download from de
+        irods_path = irods_files[ofile_name]
+        # downloadFromDE(irods_path, landsat_opath)
+        get_command = "iget -K " + irods_path
+
+        os.system(get_command)
+
+        shutil.move(ofile_name, training_stack_dir)
+
+
     if not os.path.exists(o_file) or overwrite:
-        if ofile_name in irods_files.keys() and return_data == True:
-            # download from de
-            irods_path = irods_files[ofile_name]
-            #downloadFromDE(irods_path, landsat_opath)
-            get_command = "iget -K " + irods_path
-
-            shutil.move(ofile_name, training_stack_dir)
-            return o_file
-
         start = datetime.now()
         print("Training stack doesn't exist. Creating at %s" % o_file)
 
@@ -386,7 +444,10 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
             output_array_stack.append(landsat_ndwi_array[0])
             tags[len(tags) + 1] = "L8_NDWI"
 
-            # naip_end = datetime.now()
+            slope_array = getSubSetSlope(loc_NAIPFile, slope_file, slope_qquad_dir)
+            output_array_stack.append(slope_array[0])
+            tags[len(tags) + 1] = "Slope_Degrees"
+            del slope_array
 
             out_array_stack_np = np.stack(output_array_stack, axis=0)
             # print(out_array_stack_np.shape)
@@ -404,6 +465,25 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
 
         end = datetime.now()
         print("\tFINISHED -\t%s Elapsed - %s" % (str(end - start), o_file))
+
+    else:
+        # if file already exists, open it, get aspect and append
+        print("Adding on slope array to existing training stack")
+        with rio.open(o_file) as orig_stack:
+            kwargs = orig_stack.profile
+            if not orig_stack.count == 23:
+                twentythree = False
+                kwargs.update(count=23)
+                orig_stack_array = orig_stack.read()
+            else:
+                twentythree = True
+
+        if not twentythree:
+            with rio.open(o_file, 'w', **kwargs) as new_stack:
+                slope_array = getSubSetSlope(loc_NAIPFile, slope_file, slope_qquad_dir)
+                out_array = np.concatenate((orig_stack_array, slope_array), axis=0)
+                new_stack.update_tags(23, NAME="Slope_Degrees")
+                new_stack.write(out_array.astype(np.int16))
 
     print(o_file)
     with rio.open(o_file) as ras:
@@ -423,7 +503,7 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
 
 
 def getFilesonDE(base_path):
-    pw = "Cinco12#"
+    pw = ""
     session = iRODSSession(host='data.cyverse.org', zone="iplant", port=1247, user='bhickson', password=pw)
 
     data_col = session.collections.get(base_path)
@@ -483,14 +563,14 @@ if __name__ == '__main__':
     segmentedImagesDir = os.path.join(base_datadir, "SegmentedNAIPImages")
     utils.useDirectory(segmentedImagesDir)
 
-    print("Creating irods files dict...") 
+    print("Creating irods files dict...")
     global irods_files
 
     irods_data_path = "/iplant/home/bhickson/2015/Data"
     irods_sess, irods_files = getFilesonDE(irods_data_path)
     #for f, p in irods_files.items():
     #    print("FNAME:", f, "PATH: ", p)
-
+    """
     print("\n--------------- Starting with Subset QQuads ---------------\n")
     single_comp_subset = []
     with open(os.path.join(base_datadir,"NaipDone4.txt")) as txt:
@@ -528,9 +608,9 @@ if __name__ == '__main__':
 
 
     print("\n--------------- Finished with Subset QQuads ---------------\n")
-    
-    exit()
+    """
 
+    """
     print("\n--------------- Starting with training qquads ---------------\n")
     print("Reading in class_points_file...")
     loc_class_points = os.path.join(vectorinputs_dir, "classificationPoints.shp")
@@ -556,18 +636,18 @@ if __name__ == '__main__':
     #Parallel(n_jobs=8)(delayed(generateStack) (naip_file) for naip_file in training_naip_files)
 
     print("\n--------------- Finished with training qquads ---------------\n")
-
+    """
 
     print("\n--------------- Starting on aoi qquads ---------------\n")
     base_datadir = os.path.abspath(r"../Data")
     training_data_dir = os.path.join(base_datadir, "inital_model_inputs")
     loc_usgs_qquads = os.path.join(training_data_dir, "USGS_QQuads_AZ.shp")
     footprints = gpd.read_file(loc_usgs_qquads)
-    aoi = gpd.GeoDataFrame.from_file(r"Q:\Arid Riparian Project\AridRiparianProject\AridRiparianProject.gdb",
-                                     layer='TargetEcoregions')
+    #aoi = gpd.GeoDataFrame.from_file(r"Q:\Arid Riparian Project\AridRiparianProject\AridRiparianProject.gdb", layer='TargetEcoregions')
 
-    aoi.crs = fiona.crs.from_epsg(2163)
+    #aoi.crs = fiona.crs.from_epsg(2163)
     # print(aoi.crs)
+    aoi = os.path.join(vectorinputs_dir, "Maricopa_County.gpkg")
 
     footprints = gpd.read_file(loc_usgs_qquads)
     aoi.to_crs(footprints.crs, inplace=True)
@@ -579,13 +659,24 @@ if __name__ == '__main__':
                 fpath = getFullNAIPPath(row.QUADID, r"Q:\Arid Riparian Project\Data\\NAIP_2015_Compressed")
                 aoi_qquads.append(fpath)
 
-    Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir) \
+
+    Parallel(n_jobs=8, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
         (delayed(segmentImage)(naip_file, segmentedImagesDir) for naip_file in aoi_qquads)
-    Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir)\
-        (delayed(generateStack)(naip_file) for naip_file in aoi_qquads)
+
+    for root, dirs, files in os.walk(naip_dir):
+        for file in files:
+            fpath = os.path.join(root, files)
+            pushToDE(fpath, irods_files, irods_sess)
+
+
+    #Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir) \
+    #    (delayed(segmentImage)(naip_file, segmentedImagesDir) for naip_file in aoi_qquads)
+    #Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir)\
+    #    (delayed(generateStack)(naip_file) for naip_file in aoi_qquads)
 
     print("\n--------------- Finished with aoi qquads ---------------\n")
 
+    exit()
     print("\n--------------- Starting with all qquads ---------------\n")
     all_naip_files = []
     for root, dirs, files in os.walk(r"Q:\Arid Riparian Project\Data\\NAIP_2015_Compressed"):
