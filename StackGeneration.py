@@ -208,6 +208,50 @@ def vegIndexCalc(naip_array_list, indicies):
     return vi_calcs
 
 
+def getSubSetSlope(naip_path, slope_file, odir, overwrite=False):
+    ssl_start = datetime.now()
+    ofile = "SlopeDeg_" + os.path.basename(naip_path)
+
+    slope_file = os.path.abspath(slope_file)
+
+    slope_opath = os.path.join(odir, ofile)
+
+    print(slope_opath)
+    if not os.path.exists(slope_opath) or overwrite:
+        start = datetime.now()
+        reference_f = gdal.Open(naip_path)
+        geo_transform = reference_f.GetGeoTransform()
+        resx = geo_transform[1]
+        resy = geo_transform[5]
+        proj = reference_f.GetProjectionRef()
+        minx = geo_transform[0]
+        maxy = geo_transform[3]
+        maxx = minx + (resx * reference_f.RasterXSize)
+        miny = maxy + (resy * reference_f.RasterYSize)
+
+        # build slope qquad from naip extent
+
+        resampletype = "bilinear"
+
+        gdal_warp = "gdalwarp -overwrite -tap -r %s -t_srs %s -tr %s %s -te_srs %s -te %s %s %s %s %s %s" % (
+            resampletype, proj, resx, resy, proj, str(minx), str(miny), str(maxx), str(maxy), slope_file,
+            slope_opath)
+        # logger.info("\tExecuting gdal_warp operation on %s for footprint of naip file %s" % (slope_file, naip_path))
+        print("Executing gdal_warp operation on %s for footprint of naip file %s" % (slope_file, naip_path))
+
+        os.system(gdal_warp)
+        # logger.info("\tFinished qquad for %s landsat in %s" % (slope_file, str(datetime.now() - ssl_start)))
+
+    with rio.open(slope_opath) as s_ras:
+        s_ras_array = s_ras.read()
+
+    # multiply by 100 conserve precision when reducing to int16 (e.g. 40.0215 degrees -> 4021)
+    s_ras_array *= 100
+
+    print("Bringing in slope array from %s ..." % slope_opath)
+    return s_ras_array.astype(np.int16)
+
+
 def getSubSetLandsat(naip_path, landsat_file, opath, overwrite=False):
     ssl_start = datetime.now()
     ofile = "Landsat8_" + os.path.basename(naip_path)
@@ -273,6 +317,7 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
     ndsi_qquad_dir = utils.useDirectory(os.path.join(base_datadir, "NDSI"))
     ndwi_qquad_dir = utils.useDirectory(os.path.join(base_datadir, "NDWI"))
     landsat_qquad_dir = utils.useDirectory(os.path.join(base_landsatdir, "byNAIPDOY_QQuads"))
+    slope_qquad_dir = utils.useDirectory(os.path.join(base_datadir, "Slope"))
 
 
     landsat_file = os.path.os.path.join(base_landsatdir, "Landsat1to8_TOA_NAIPAcquiDate_merge_rectified.tif")
@@ -280,6 +325,8 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
     ndsi_file = os.path.join(ndsi_qquad_dir, "LandsatOLI_NDSI_30m.tif")
     # LOCATION OF THE NDWI FILE
     ndwi_file = os.path.join(ndwi_qquad_dir, "LandsatOLI_NDWI_30m.tif")
+
+    slope_file = os.path.join(slope_qquad_dir, "Slope-Degrees_AZ.tif")
 
     if not os.path.exists(training_stack_dir):
         os.mkdir(training_stack_dir)
@@ -302,8 +349,6 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
 
         with rio.open(loc_NAIPFile) as ras:
             prof = ras.profile
-
-            #initialize = rio.open(o_file, 'w', **prof).close()  # prevent parallel process for working on same file
 
             n_bands = prof["count"]
 
@@ -370,7 +415,10 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
             tags[len(tags) + 1] = "L8_NDWI"
             del landsat_ndwi_array
 
-            # naip_end = datetime.now()
+            slope_array = getSubSetSlope(loc_NAIPFile, slope_file, slope_qquad_dir)
+            output_array_stack.append(slope_array[0])
+            tags[len(tags) + 1] = "Slope_Degrees"
+            del slope_array
 
             out_array_stack_np = np.stack(output_array_stack, axis=0)
             # print(out_array_stack_np.shape)
@@ -389,6 +437,26 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
 
         end = datetime.now()
         print("\tFINISHED -\t%s Elapsed - %s" % (str(end - start), o_file))
+
+    else:
+        # if file already exists, open it, get aspect and append
+        print("Adding on slope array to existing training stack")
+        with rio.open(o_file) as orig_stack:
+            kwargs = orig_stack.profile
+            if not orig_stack.count == 23:
+                twentythree = False
+                kwargs.update(count=23)
+                orig_stack_array = orig_stack.read()
+            else:
+                twentythree = True
+
+        if not twentythree:
+            with rio.open(o_file, 'w', **kwargs) as new_stack:
+                slope_array = getSubSetSlope(loc_NAIPFile, slope_file, slope_qquad_dir)
+                out_array = np.concatenate((orig_stack_array, slope_array), axis=0)
+                new_stack.update_tags(23, NAME="Slope_Degrees")
+                new_stack.write(out_array.astype(np.int16))
+
 
     print(o_file)
     with rio.open(o_file) as ras:
