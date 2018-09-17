@@ -40,21 +40,6 @@ def segmentImage(loc_NAIPFile, seg_img_dir, overwrite=False, return_data=True):
     o_file = os.path.join(seg_img_dir, ofile_name)
 
     if not os.path.exists(o_file) or overwrite:
-        if ofile_name in irods_files.keys() and return_data == True:
-            # download from de
-            irods_path = irods_files[ofile_name]
-            #downloadFromDE(irods_path, landsat_opath)
-            get_command = "iget -K " + irods_path
-
-            os.system(get_command)
-
-            with rio.open(ofile_name) as segras:
-                seg_array = segras.read(1).astype(np.int32)
-
-            os.remove(ofile_name)
-
-            return seg_array
-
         seg_start = datetime.now()
         start = datetime.now()
         #print("Segmented file doesn't exist or overwrite set. Creating at %s" % o_file)
@@ -80,7 +65,7 @@ def segmentImage(loc_NAIPFile, seg_img_dir, overwrite=False, return_data=True):
         seg_end = datetime.now()
         print("\tSegmentation took {}".format(seg_end-seg_start))
 
-    pushToDE(o_file, irods_files, irods_sess)
+    #pushToDE(o_file, irods_files, irods_sess)
 
     if return_data:
         with rio.open(o_file) as ras:
@@ -257,65 +242,67 @@ def getSubSetLandsat(naip_path, landsat_file, opath, overwrite=False, return_dat
     ofile = "Landsat8_" + os.path.basename(naip_path)
 
     landsat_opath = os.path.join(opath, ofile)
-
-    if not os.path.exists(landsat_opath) or overwrite:
-        if ofile in irods_files.keys() and return_data == True:
-            # download from de
+    try:
+        if not os.path.exists(landsat_opath) or overwrite:
+            if ofile in irods_files.keys() and return_data == True:
+                # download from de
             
-            irods_path = irods_files[ofile]
-            #downloadFromDE(irods_path, landsat_opath)
-            get_command = "iget -K " + irods_path
-            os.system(get_command)
+                irods_path = irods_files[ofile]
+                #downloadFromDE(irods_path, landsat_opath)
+                get_command = "iget -K " + irods_path
+                print("Downloading from iRods DE...")
+                os.system(get_command)
             
-            #shutil.move(ofile, landsat_opath)
-            with rio.open(ofile) as lras:
-                lras_array = lras.read()
+                #shutil.move(ofile, landsat_opath)
+                with rio.open(ofile) as lras:
+                    lras_array = lras.read()
 
-            os.remove(ofile)
+                os.remove(ofile)
+                
+                if "ndsi" in opath.lower() or "ndwi" in opath.lower():
+                    lras_array = lras_array * 1000
 
+                print("Bringing in landsat array from %s ..." % opath)
+                return lras_array.astype(np.int16)
+
+            start = datetime.now()
+            reference_f = gdal.Open(naip_path)
+            geo_transform = reference_f.GetGeoTransform()
+            resx = geo_transform[1]
+            resy = geo_transform[5]
+            proj = reference_f.GetProjectionRef()
+            minx = geo_transform[0]
+            maxy = geo_transform[3]
+            maxx = minx + (resx * reference_f.RasterXSize)
+            miny = maxy + (resy * reference_f.RasterYSize)
+
+            # build landsat tile from naip extent
             if "ndsi" in opath.lower() or "ndwi" in opath.lower():
-                lras_array = lras_array * 1000
+                resampletype = "bilinear"
+            else:
+                resampletype = "bilinear"
+                # resampletype = "near"
 
-            print("Bringing in landsat array from %s ..." % opath)
-            return lras_array.astype(np.int16)
-        
-        start = datetime.now()
-        reference_f = gdal.Open(naip_path)
-        geo_transform = reference_f.GetGeoTransform()
-        resx = geo_transform[1]
-        resy = geo_transform[5]
-        proj = reference_f.GetProjectionRef()
-        minx = geo_transform[0]
-        maxy = geo_transform[3]
-        maxx = minx + (resx * reference_f.RasterXSize)
-        miny = maxy + (resy * reference_f.RasterYSize)
+            gdal_warp = "gdalwarp -overwrite -tap -r %s -t_srs %s -tr %s %s -te_srs %s -te %s %s %s %s %s %s" % (
+                resampletype, proj, resx, resy, proj, str(minx), str(miny), str(maxx), str(maxy), landsat_file,
+                landsat_opath)
+            logger.info("\tExecuting gdal_warp operation on %s for footprint of naip file %s" % (landsat_file, naip_path))
+            print("Executing gdal_warp operation on %s for footprint of naip file %s" % (landsat_file, naip_path))
 
-        # build landsat tile from naip extent
+            os.system(gdal_warp)
+            logger.info("\tFinished qquad for %s landsat in %s" % (landsat_file, str(datetime.now() - ssl_start)))
 
-        if "ndsi" in opath.lower() or "ndwi" in opath.lower():
-            resampletype = "bilinear"
-        else:
-            resampletype = "bilinear"
-            # resampletype = "near"
+            if return_data == True:
+                with rio.open(landsat_opath) as lras:
+                    lras_array = lras.read()
 
-        gdal_warp = "gdalwarp -overwrite -tap -r %s -t_srs %s -tr %s %s -te_srs %s -te %s %s %s %s %s %s" % (
-            resampletype, proj, resx, resy, proj, str(minx), str(miny), str(maxx), str(maxy), landsat_file,
-            landsat_opath)
-        logger.info("\tExecuting gdal_warp operation on %s for footprint of naip file %s" % (landsat_file, naip_path))
-        print("Executing gdal_warp operation on %s for footprint of naip file %s" % (landsat_file, naip_path))
+                if "ndsi" in opath.lower() or "ndwi" in opath.lower():
+                    lras_array = lras_array * 1000
+    except:
+        lras_array = getSubSetLandsat(naip_path, landsat_file, opath, overwrite=True, return_data=False)
 
-        os.system(gdal_warp)
-        logger.info("\tFinished qquad for %s landsat in %s" % (landsat_file, str(datetime.now() - ssl_start)))
-
-    if return_data == True:
-        with rio.open(landsat_opath) as lras:
-            lras_array = lras.read()
-
-        if "ndsi" in opath.lower() or "ndwi" in opath.lower():
-             lras_array = lras_array * 1000
-
-        print("Bringing in landsat array from %s ..." % opath)
-        return lras_array.astype(np.int16)
+    print("Bringing in landsat array from %s ..." % opath)
+    return lras_array.astype(np.int16)
 
 
 def compoundArrays(array_stack, tiff_tags, arrays_dict):
@@ -640,14 +627,14 @@ if __name__ == '__main__':
 
     print("\n--------------- Starting on aoi qquads ---------------\n")
     base_datadir = os.path.abspath(r"../Data")
-    training_data_dir = os.path.join(base_datadir, "inital_model_inputs")
+    training_data_dir = os.path.join(base_datadir, "initial_model_inputs")
     loc_usgs_qquads = os.path.join(training_data_dir, "USGS_QQuads_AZ.shp")
     footprints = gpd.read_file(loc_usgs_qquads)
     #aoi = gpd.GeoDataFrame.from_file(r"Q:\Arid Riparian Project\AridRiparianProject\AridRiparianProject.gdb", layer='TargetEcoregions')
 
     #aoi.crs = fiona.crs.from_epsg(2163)
     # print(aoi.crs)
-    aoi = os.path.join(vectorinputs_dir, "Maricopa_County.gpkg")
+    aoi = gpd.read_file(os.path.join(vectorinputs_dir, "Maricopa_County.gpkg"))
 
     footprints = gpd.read_file(loc_usgs_qquads)
     aoi.to_crs(footprints.crs, inplace=True)
@@ -656,12 +643,17 @@ if __name__ == '__main__':
     for i, row in footprints.iterrows():
         for j, arow in aoi.iterrows():
             if row.geometry.within(arow.geometry):
-                fpath = getFullNAIPPath(row.QUADID, r"Q:\Arid Riparian Project\Data\\NAIP_2015_Compressed")
+                fpath = getFullNAIPPath(row.QUADID, r"../Data/NAIP", irods_files)
                 aoi_qquads.append(fpath)
 
+    def processLS(f, rd=False):
+        getSubSetLandsat(f, ndsi_file, ndsi_qquad_dir, return_data=rd)
+        getSubSetLandsat(f, ndwi_file, ndwi_qquad_dir, return_data=rd)
+        getSubSetLandsat(f, landsat_file, landsat_qquad_dir, return_data=rd)
 
-    Parallel(n_jobs=8, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
-        (delayed(segmentImage)(naip_file, segmentedImagesDir) for naip_file in aoi_qquads)
+
+    Parallel(n_jobs=9, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
+            (delayed(generateStack)(naip_file) for naip_file in aoi_qquads)
 
     for root, dirs, files in os.walk(naip_dir):
         for file in files:
@@ -679,7 +671,7 @@ if __name__ == '__main__':
     exit()
     print("\n--------------- Starting with all qquads ---------------\n")
     all_naip_files = []
-    for root, dirs, files in os.walk(r"Q:\Arid Riparian Project\Data\\NAIP_2015_Compressed"):
+    for root, dirs, files in os.walk(r"../NAIP"):
         for file in files:
             if file.endswith(".tif"):
                 fpath = os.path.join(root, file)

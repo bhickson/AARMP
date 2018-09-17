@@ -167,11 +167,19 @@ def mergeRasters(files, outfile):
     return outfile
 
 
-def getFullNAIPPath(naip_file, naipdir):
+def getFullNAIPPath(naip_file, naipdir, irodsfiles={}):
     for root, dirs, files in os.walk(naipdir):
         for file in files:
             if naip_file in file:
                 return os.path.join(root, file)
+
+    for filename,irods_path in irodsfiles.items():
+        if naip_file in filename:
+            get_command = "iget -K " + irods_path
+            print("Downloading NAIP file from DE...")
+            os.system(get_command)
+            shutil.move(filename, naipdir)
+            return os.path.join(naipdir,filename)
 
     print("Unable to find naip file %s in %s. Exiting" % (naip_file, naipdir))
     raise Exception
