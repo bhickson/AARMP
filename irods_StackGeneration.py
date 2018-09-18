@@ -350,16 +350,18 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
     irods_sess, irods_files = getFilesonDE(irods_data_path)
 
     # IF FILE ON DE, DOWNLOAD
-    if ofile_name in irods_files.keys():
-        print("Found {} in Cyverse DE. Downloading...".format(ofile_name))
-        # download from de
-        irods_path = irods_files[ofile_name]
-        # downloadFromDE(irods_path, landsat_opath)
-        get_command = "iget -K " + irods_path
+    # BEN YOU PUT THIS HERE TO ACCOUNT FOR SLOPE OVERWRITE. DE FILE AND LOCAL FILE MAY HAVE 22 BANDS
+    if not os.path.exists(o_file):
+        if ofile_name in irods_files.keys():
+            print("Found {} in Cyverse DE. Downloading...".format(ofile_name))
+            # download from de
+            irods_path = irods_files[ofile_name]
+            # downloadFromDE(irods_path, landsat_opath)
+            get_command = "iget -K " + irods_path
 
-        os.system(get_command)
+            os.system(get_command)
 
-        shutil.move(ofile_name, training_stack_dir)
+            shutil.move(ofile_name, training_stack_dir)
 
     if not os.path.exists(o_file) or overwrite:
         start = datetime.now()
@@ -476,13 +478,6 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
                     new_stack.update_tags(n, NAME=tag)
                 new_stack.update_tags(23, NAME="Slope_Degrees")
                 new_stack.write(out_array.astype(np.int16))
-
-    print(o_file)
-    with rio.open(o_file) as ras:
-        tags = []
-        for i in range(1, ras.count + 1):
-            print(ras.tags(i))
-            tags.append(ras.tags(i)['NAME'])
 
     """except ValueError:
         print("\n----------- SHAPE ERROR-----------\n")
@@ -617,8 +612,8 @@ if __name__ == '__main__':
         training_naip_files.append(loc_NAIPFile)
     del training_data_df
 
-    for naip_file in training_naip_files:
-        generateStack(naip_file)
+    #for naip_file in training_naip_files:
+    #    generateStack(naip_file)
 
     # Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir)\
     #    (delayed(segmentImage)(naip_file, segmentedImagesDir, return_data=False) for naip_file in training_naip_files)
