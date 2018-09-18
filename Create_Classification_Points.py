@@ -70,7 +70,7 @@ def getSnappedPixelLocation(geom_x, geom_y, ras_attribs, props):
 def getRasterTransform(rasterloc, t_epsg="26912"):
     ras_attr = {}
     with rasterio.open(rasterloc, 'r') as raster:
-        t = raster.affine
+        t = raster.transform
         ras_attr["res_x"] = t.a
         ras_attr["res_y"] = t.e
         ras_attr["ulx"] = t.c
