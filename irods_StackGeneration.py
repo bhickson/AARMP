@@ -28,6 +28,8 @@ import Utilities as utils
 from irods.session import iRODSSession
 from irods.models import Collection, DataObject
 
+from shapely.geometry import Polygon, MultiPolygon
+
 import time
 
 
@@ -93,8 +95,17 @@ def calcSegmentMean(labeled_array, regs, in_band):
     # regions = measure.regionprops(labeled_array.astype(np.int64), intensity_image=in_band)
 
     print("\tBeginning mean calculation on segments...")
-    mean_array = np.copy(labeled_array)
+    #mean_array = np.copy(labeled_array)
 
+    values_map = {}
+    for i,r in enumerate(regs):
+        values_map[r.label] = r.mean_intensity
+
+    mean_array = vec_translate(labeled_array, values_map)
+    #print("Full Vectorization: ", datetime.now() - vec_start)
+
+    
+    """
     for r in regs:
         segment = r.label
         bbox = r.bbox
@@ -107,21 +118,40 @@ def calcSegmentMean(labeled_array, regs, in_band):
         # print(sub_array)
 
         mean_array[min_row:min_col, max_row:max_col] = sub_array
-
+    """
     print("\t...Mean calculation complete.\n\t{} elapsed.".format(datetime.now() - mean_start))
 
     return mean_array
 
 
-def calculateGeometry(seg_array, regs, attrib):
+def vec_translate(a, my_dict):
+    return np.vectorize(my_dict.__getitem__)(a)
+
+
+def calculateGeometry(seg_array, regs):
     start = datetime.now()
     # regions = measure.regionprops(labeled_array.astype(np.int32))  #, intensity_image=empty_ar)
     # print("got regions")
 
     labeled_array = label(seg_array, connectivity=1).astype(np.float32) + 1
 
-    out_array = np.copy(labeled_array)
+    #out_array = np.copy(labeled_array)
 
+    value_map_area = {}
+    value_map_perim = {}
+    value_map_extent = {}
+
+    for i,r in enumerate(regs):
+        value_map_area[r.label] = r.area
+        value_map_perim[r.label] = r.perimeter
+        value_map_extent[r.label] = r.extent
+
+    area_array = vec_translate(labeled_array, value_map_area)
+    perim_array = vec_translate(labeled_array, value_map_perim)
+    perc_area_array = vec_translate(labeled_array, value_map_extent)
+
+    return {"area": area_array, "perim": perim_array, "perc_area": perc_area_array}
+    """
     for r in regs:
         segment = r.label
         bbox = r.bbox
@@ -140,6 +170,7 @@ def calculateGeometry(seg_array, regs, attrib):
         out_array[min_row:min_col, max_row:max_col] = sub_array
 
     return out_array
+    """
 
 
 def vegIndexCalc(naip_array_list, indicies):
@@ -226,6 +257,9 @@ def getSubSetSlope(naip_path, slope_file, odir, overwrite=False):
     with rio.open(slope_opath) as s_ras:
         s_ras_array = s_ras.read()
 
+    # File cleanup to save space
+    os.remove(slope_opath)
+
     # multiply by 100 conserve precision when reducing to int16 (e.g. 40.0215 degrees -> 4021)
     s_ras_array *= 100
 
@@ -294,6 +328,9 @@ def getSubSetLandsat(naip_path, landsat_file, opath, overwrite=False, return_dat
             with rio.open(landsat_opath) as lras:
                 lras_array = lras.read()
 
+            # File cleanup to save space
+            os.remove(landsat_opath)
+
             if "ndsi" in opath.lower() or "ndwi" in opath.lower():
                 lras_array = lras_array * 1000
 
@@ -314,7 +351,7 @@ def compoundArrays(array_stack, tiff_tags, arrays_dict):
 
 def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI", "OSAVI", "MSAVI2", "EVI2"],
                   overwrite=False):  # , training_stack_dir, naip_band_order, veg_indicies):
-    # print("Starting on NAIP File: %s" % loc_NAIPFile)
+    print("Starting on NAIP File: %s" % loc_NAIPFile)
 
     # Identify and output directory - create if necessary
     base_datadir = os.path.abspath(base_dir)
@@ -398,12 +435,17 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
                 output_array_stack.append(seg_mean_band.astype(np.int16))
 
             # CREATED BANDS FOR SEGMENT SIZE CHARACERISTICS (Area/Perimeter of segment, and % area of bounding box)
-            for att in ["area", "perim", "perc_area"]:
+            """for att in ["area", "perim", "perc_area"]:
                 print("\tStarting %s" % att)
                 oa = calculateGeometry(bands_array_seg, regions, att)
                 tags[len(tags) + 1] = att
-                output_array_stack.append(oa.astype(np.int16))
+                output_array_stack.append(oa.astype(np.int16))"""
+            geometric_attribs_arrays = calculateGeometry(bands_array_seg, regions)
+            output_array_stack.append(geometric_attribs_arrays["area"])
+            output_array_stack.append(geometric_attribs_arrays["perim"])
+            output_array_stack.append(geometric_attribs_arrays["perc_area"])
 
+            del geometric_attribs_arrays
             del bands_array_seg
             del label_im
             # geometric_arrays = calculateGeometry(labeled_array=label_im, regs=regions)
@@ -491,10 +533,18 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
 
 
 def getFilesonDE(base_path):
-    pw = ""
-    session = iRODSSession(host='data.cyverse.org', zone="iplant", port=1247, user='bhickson', password=pw)
+    pw_file = "./pw_file.txt"
+    try:
+        with open(pw_file) as pf:
+            pw = pf.readlines(0)[0].strip()
 
-    data_col = session.collections.get(base_path)
+        session = iRODSSession(host='data.cyverse.org', zone="iplant", port=1247, user='bhickson', password=pw)
+
+        data_col = session.collections.get(base_path)
+
+    except:
+        print("Unable to make connection to discover env. Continuing...")
+        return None, {}
 
     ifiles = {}
 
@@ -556,6 +606,8 @@ if __name__ == '__main__':
 
     irods_data_path = "/iplant/home/bhickson/2015/Data"
     irods_sess, irods_files = getFilesonDE(irods_data_path)
+    exit()
+    #irods_fils = {}
     # for f, p in irods_files.items():
     #    print("FNAME:", f, "PATH: ", p)
     """
@@ -597,7 +649,7 @@ if __name__ == '__main__':
 
     print("\n--------------- Finished with Subset QQuads ---------------\n")
     """
-
+    """
     print("\n--------------- Starting with training qquads ---------------\n")
     print("Reading in class_points_file...")
     loc_class_points = os.path.join(vectorinputs_dir, "classificationPoints.shp")
@@ -623,7 +675,7 @@ if __name__ == '__main__':
     # Parallel(n_jobs=8)(delayed(generateStack) (naip_file) for naip_file in training_naip_files)
 
     print("\n--------------- Finished with training qquads ---------------\n")
-
+    """
     print("\n--------------- Starting on aoi qquads ---------------\n")
     base_datadir = os.path.abspath(r"../Data")
     training_data_dir = os.path.join(base_datadir, "initial_model_inputs")
@@ -637,13 +689,21 @@ if __name__ == '__main__':
 
     footprints = gpd.read_file(loc_usgs_qquads)
     aoi.to_crs(footprints.crs, inplace=True)
+    
+    irods_naip_sess, irods_naip_files = getFilesonDE(irods_data_path + "/NAIP")
 
+    from glob import glob
+    existing_ts = glob(training_stack_dir + "/*.tif")
     aoi_qquads = []
     for i, row in footprints.iterrows():
         for j, arow in aoi.iterrows():
-            if row.geometry.within(arow.geometry):
-                fpath = getFullNAIPPath(row.QUADID, r"../Data/NAIP", irods_files)
+            if row.geometry.intersects(arow.geometry):
+                fpath = getFullNAIPPath(row.QUADID, r"../Data/NAIP", irods_naip_files)
+                basename = os.path.basename(fpath)
                 aoi_qquads.append(fpath)
+                for f in existing_ts:
+                    if basename.split(".")[0] in f:
+                        aoi_qquads.remove(fpath)
 
 
     def processLS(f, rd=False):
@@ -651,14 +711,29 @@ if __name__ == '__main__':
         getSubSetLandsat(f, ndwi_file, ndwi_qquad_dir, return_data=rd)
         getSubSetLandsat(f, landsat_file, landsat_qquad_dir, return_data=rd)
 
+    def tryGenerateStack(file):
+        try:
+            generateStack(file)
+        except:
+            print("Unable to segment {}".format(file))
+            with open("failures.txt", "a+") as tf:
+                file.write(tf + "\n")
 
-    Parallel(n_jobs=9, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
-        (delayed(generateStack)(naip_file) for naip_file in aoi_qquads)
+    print("\nBeginning image segmentation for {} QQuads\n".format(len(aoi_qquads)))
+    Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir) \
+            (delayed(segmentImage)(naip_file, segmentedImagesDir) for naip_file in aoi_qquads)
 
-    for root, dirs, files in os.walk(naip_dir):
-        for file in files:
-            fpath = os.path.join(root, files)
-            pushToDE(fpath, irods_files, irods_sess)
+
+    print("\nStarting stack generation for {} QQuads\n".format(len(aoi_qquads)))
+    #for naip_file in aoi_qquads:
+    #    generateStack(naip_file)
+    Parallel(n_jobs=12, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
+        (delayed(tryGenerateStack)(naip_file) for naip_file in aoi_qquads)
+
+    #for root, dirs, files in os.walk(naip_dir):
+    #    for file in files:
+    #        fpath = os.path.join(root, files)
+    #        pushToDE(fpath, irods_files, irods_sess)
 
     # Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir) \
     #    (delayed(segmentImage)(naip_file, segmentedImagesDir) for naip_file in aoi_qquads)

@@ -173,10 +173,11 @@ def getFullNAIPPath(naip_file, naipdir, irodsfiles={}):
             if naip_file in file:
                 return os.path.join(root, file)
 
+    print("Num irods files: ", len(irodsfiles))
     for filename,irods_path in irodsfiles.items():
-        if naip_file in filename:
+        if naip_file in filename:#in filename and not "Segmented" not in filename:
             get_command = "iget -K " + irods_path
-            print("Downloading NAIP file from DE...")
+            print("Downloading NAIP file {} from DE...".format(filename))
             os.system(get_command)
             shutil.move(filename, naipdir)
             return os.path.join(naipdir,filename)
