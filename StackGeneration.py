@@ -8,6 +8,8 @@ import os
 import shutil
 import rasterio as rio
 import numpy as np
+from glob import glob
+
 from collections import OrderedDict
 
 from datetime import datetime
@@ -64,8 +66,6 @@ def segmentImage(loc_NAIPFile, seg_img_dir, overwrite=False, return_data=True):
         seg_end = datetime.now()
         print("\tSegmentation took {}".format(seg_end - seg_start))
 
-    # pushToDE(o_file, irods_files, irods_sess)
-
     if return_data:
         with rio.open(o_file) as ras:
             seg_array = ras.read(1).astype(np.int32)
@@ -102,23 +102,7 @@ def calcSegmentMean(labeled_array, regs, in_band):
         values_map[r.label] = r.mean_intensity
 
     mean_array = vec_translate(labeled_array, values_map)
-    #print("Full Vectorization: ", datetime.now() - vec_start)
 
-    
-    """
-    for r in regs:
-        segment = r.label
-        bbox = r.bbox
-        min_row, max_row, min_col, max_col = bbox
-
-        sub_array = mean_array[min_row:min_col, max_row:max_col]
-        # print(sub_array)
-
-        sub_array[sub_array == segment] = r.mean_intensity
-        # print(sub_array)
-
-        mean_array[min_row:min_col, max_row:max_col] = sub_array
-    """
     print("\t...Mean calculation complete.\n\t{} elapsed.".format(datetime.now() - mean_start))
 
     return mean_array
@@ -135,42 +119,11 @@ def calculateGeometry(seg_array, regs):
 
     labeled_array = label(seg_array, connectivity=1).astype(np.float32) + 1
 
-    #out_array = np.copy(labeled_array)
-
-    value_map_area = {}
-    value_map_perim = {}
-    value_map_extent = {}
-
-    for i,r in enumerate(regs):
-        value_map_area[r.label] = r.area
-        value_map_perim[r.label] = r.perimeter
-        value_map_extent[r.label] = r.extent
-
     area_array = vec_translate(labeled_array, value_map_area)
     perim_array = vec_translate(labeled_array, value_map_perim)
     perc_area_array = vec_translate(labeled_array, value_map_extent)
 
     return {"area": area_array, "perim": perim_array, "perc_area": perc_area_array}
-    """
-    for r in regs:
-        segment = r.label
-        bbox = r.bbox
-        min_row, max_row, min_col, max_col = bbox
-        sub_array = labeled_array[min_row:min_col, max_row:max_col]
-
-        if attrib.lower() == "area":
-            value = r.area
-        elif attrib.lower() == "perim":
-            value = r.perimeter
-        elif attrib.lower() == "perc_area":
-            value = r.extent * 100
-
-        sub_array[sub_array == segment] = value
-
-        out_array[min_row:min_col, max_row:max_col] = sub_array
-
-    return out_array
-    """
 
 
 def vegIndexCalc(naip_array_list, indicies):
@@ -435,11 +388,6 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
                 output_array_stack.append(seg_mean_band.astype(np.int16))
 
             # CREATED BANDS FOR SEGMENT SIZE CHARACERISTICS (Area/Perimeter of segment, and % area of bounding box)
-            """for att in ["area", "perim", "perc_area"]:
-                print("\tStarting %s" % att)
-                oa = calculateGeometry(bands_array_seg, regions, att)
-                tags[len(tags) + 1] = att
-                output_array_stack.append(oa.astype(np.int16))"""
             geometric_attribs_arrays = calculateGeometry(bands_array_seg, regions)
             output_array_stack.append(geometric_attribs_arrays["area"])
             output_array_stack.append(geometric_attribs_arrays["perim"])
@@ -448,10 +396,6 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
             del geometric_attribs_arrays
             del bands_array_seg
             del label_im
-            # geometric_arrays = calculateGeometry(labeled_array=label_im, regs=regions)
-
-
-            # output_array_stack, tags = compoundArrays(output_array_stack, tags, geometric_arrays)
 
             # CREATE VEG INDEX ARRAYS
             veg_arrays_dict = vegIndexCalc(output_array_stack, veg_indicies)
@@ -466,8 +410,7 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
 
             # APPEND NDSI ARRAY TO MAIN ARRAY
             landsat_ndsi_array = getSubSetLandsat(loc_NAIPFile, ndsi_file, ndsi_qquad_dir, overwrite=False)
-            output_array_stack.append(landsat_ndsi_array[
-                                          0])  # full read has shape (1, 7500, 6900). Must be 7500,6900 for equal shape of other arrays
+            output_array_stack.append(landsat_ndsi_array[0])  # full read has shape (1, 7500, 6900). Must be 7500,6900 for equal shape of other arrays
             tags[len(tags) + 1] = "L8_NDSI"
 
             # APPEND NDWI ARRAY TO MAIN ARRAY
@@ -521,14 +464,6 @@ def generateStack(loc_NAIPFile, base_dir=r"../Data", veg_indicies=["NDVI", "SAVI
                 new_stack.update_tags(23, NAME="Slope_Degrees")
                 new_stack.write(out_array.astype(np.int16))
 
-    """except ValueError:
-        print("\n----------- SHAPE ERROR-----------\n")
-        print("\t", loc_NAIPFile)
-        print("\tSEGMENT SHAPE:", bands_array_seg.shape)
-        print("\tBAND SHAPE:", band_array.shape)
-        print("\tLABEL SHAPE: {}\n".format(label_im.shape))
-        return
-    """
     return o_file
 
 
@@ -563,18 +498,14 @@ def getFilesonDE(base_path):
 
     return session, ifiles
 
-
-def pushToDE(file_path, irods_files, session, base_datadir="../Data",
-             irods_data_path="/iplant/home/bhickson/2015/Data"):
-    # push comleted file to irods
-    fname = os.path.basename(file_path)
-    if fname not in irods_files.keys():
-        relative_dir = file_path.split(os.path.abspath(base_datadir))[1]
-        irods_odir = irods_data_path + relative_dir
-        print("-------- Pushing data to DE....  -   %s" % irods_odir)
-        session.data_objects.put(file_path, irods_odir)
-
-
+def tryGenerateStack(file):
+	try:
+		generateStack(file)
+	except:
+		print("Unable to segment {}".format(file))
+		with open("failures.txt", "a+") as tf:
+			file.write(tf + "\n")
+			
 if __name__ == '__main__':
     print(datetime.now())
 
@@ -606,55 +537,18 @@ if __name__ == '__main__':
 
     irods_data_path = "/iplant/home/bhickson/2015/Data"
     irods_sess, irods_files = getFilesonDE(irods_data_path)
-    exit()
-    #irods_fils = {}
-    # for f, p in irods_files.items():
-    #    print("FNAME:", f, "PATH: ", p)
-    """
-    print("\n--------------- Starting with Subset QQuads ---------------\n")
-    single_comp_subset = []
-    with open(os.path.join(base_datadir,"NaipDone4.txt")) as txt:
-        for l in txt:
-            #print(l)
-            fullname = ""#getFullNAIPPath(l[:-1], naip_dir)
-            single_comp_subset.append(fullname)
 
-    def processLS(f, rd=False):
-        getSubSetLandsat(f, ndsi_file, ndsi_qquad_dir, return_data=rd)
-        getSubSetLandsat(f, ndwi_file, ndwi_qquad_dir, return_data=rd)
-        getSubSetLandsat(f, landsat_file, landsat_qquad_dir, return_data=rd)
+	# GET LOCAL LIST OF TRAINING STACKS
+	existing_ts = glob(training_stack_dir + "/*.tif")
+	# GET LIST OF NAIP FILES ON CYVERSE DE
+	irods_naip_sess, irods_naip_files = getFilesonDE(irods_data_path + "/NAIP")
 
-    ef = []
-    for root,dirs,files in os.walk(naip_dir):
-        for file in files:
-            if file.endswith(".tif"):
-                f = os.path.join(root,file)
-                ef.append(f)
-
-    Parallel(n_jobs=-1, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
-        (delayed(processLS)(naip_file, rd=False) for naip_file in ef)
-
-    #for f in glob.glob(landsat_qquad_dir + "/" + ".tif"):
-    #    fpath = os.path.join(landsat_qquad_dir, f)
-    #    pushToDE(fpath, irods_files, irods_sess)
-
-
-    Parallel(n_jobs=8, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
-        (delayed(generateStack)(naip_file) for naip_file in ef)
-    for root,dirs,files in os.walk(naip_dir):
-        for file in files:
-            fpath = os.path.join(root,files)
-            pushToDE(fpath, irods_files, irods_sess)
-
-
-    print("\n--------------- Finished with Subset QQuads ---------------\n")
-    """
     """
     print("\n--------------- Starting with training qquads ---------------\n")
     print("Reading in class_points_file...")
     loc_class_points = os.path.join(vectorinputs_dir, "classificationPoints.shp")
     training_data_df = gpd.read_file(loc_class_points, crs={'init': 'epsg:26912'})
-
+	
     count = 0
     training_naip_files = []
     for loc_NAIPFile, group in training_data_df.groupby("NAIP_FILE"):
@@ -664,15 +558,16 @@ if __name__ == '__main__':
         training_naip_files.append(loc_NAIPFile)
     del training_data_df
 
-    #for naip_file in training_naip_files:
-    #    generateStack(naip_file)
 
-    # Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir)\
-    #    (delayed(segmentImage)(naip_file, segmentedImagesDir, return_data=False) for naip_file in training_naip_files)
-    Parallel(n_jobs=4, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
-        (delayed(generateStack)(naip_file) for naip_file in training_naip_files)
+    print("\nBeginning image segmentation for {} QQuads\n".format(len(aoi_qquads)))
+    Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir) \
+            (delayed(segmentImage)(naip_file, segmentedImagesDir) for naip_file in training_naip_files)
 
-    # Parallel(n_jobs=8)(delayed(generateStack) (naip_file) for naip_file in training_naip_files)
+
+    print("\nStarting stack generation for {} QQuads\n".format(len(aoi_qquads)))
+    Parallel(n_jobs=12, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
+        (delayed(tryGenerateStack)(naip_file) for naip_file in training_naip_files)
+
 
     print("\n--------------- Finished with training qquads ---------------\n")
     """
@@ -681,19 +576,13 @@ if __name__ == '__main__':
     training_data_dir = os.path.join(base_datadir, "initial_model_inputs")
     loc_usgs_qquads = os.path.join(training_data_dir, "USGS_QQuads_AZ.shp")
     footprints = gpd.read_file(loc_usgs_qquads)
-    # aoi = gpd.GeoDataFrame.from_file(r"Q:\Arid Riparian Project\AridRiparianProject\AridRiparianProject.gdb", layer='TargetEcoregions')
 
-    # aoi.crs = fiona.crs.from_epsg(2163)
-    # print(aoi.crs)
     aoi = gpd.read_file(os.path.join(vectorinputs_dir, "Maricopa_County.gpkg"))
 
     footprints = gpd.read_file(loc_usgs_qquads)
     aoi.to_crs(footprints.crs, inplace=True)
     
-    irods_naip_sess, irods_naip_files = getFilesonDE(irods_data_path + "/NAIP")
-
-    from glob import glob
-    existing_ts = glob(training_stack_dir + "/*.tif")
+   
     aoi_qquads = []
     for i, row in footprints.iterrows():
         for j, arow in aoi.iterrows():
@@ -704,12 +593,6 @@ if __name__ == '__main__':
                 for f in existing_ts:
                     if basename.split(".")[0] in f:
                         aoi_qquads.remove(fpath)
-
-
-    def processLS(f, rd=False):
-        getSubSetLandsat(f, ndsi_file, ndsi_qquad_dir, return_data=rd)
-        getSubSetLandsat(f, ndwi_file, ndwi_qquad_dir, return_data=rd)
-        getSubSetLandsat(f, landsat_file, landsat_qquad_dir, return_data=rd)
 
     def tryGenerateStack(file):
         try:
@@ -725,32 +608,7 @@ if __name__ == '__main__':
 
 
     print("\nStarting stack generation for {} QQuads\n".format(len(aoi_qquads)))
-    #for naip_file in aoi_qquads:
-    #    generateStack(naip_file)
     Parallel(n_jobs=12, max_nbytes=None, verbose=40, backend='loky', temp_folder=segmentedImagesDir) \
         (delayed(tryGenerateStack)(naip_file) for naip_file in aoi_qquads)
 
-    #for root, dirs, files in os.walk(naip_dir):
-    #    for file in files:
-    #        fpath = os.path.join(root, files)
-    #        pushToDE(fpath, irods_files, irods_sess)
-
-    # Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir) \
-    #    (delayed(segmentImage)(naip_file, segmentedImagesDir) for naip_file in aoi_qquads)
-    # Parallel(n_jobs=4, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir)\
-    #    (delayed(generateStack)(naip_file) for naip_file in aoi_qquads)
-
     print("\n--------------- Finished with aoi qquads ---------------\n")
-
-    exit()
-    print("\n--------------- Starting with all qquads ---------------\n")
-    all_naip_files = []
-    for root, dirs, files in os.walk(r"../NAIP"):
-        for file in files:
-            if file.endswith(".tif"):
-                fpath = os.path.join(root, file)
-                all_naip_files.append(fpath)
-
-    # Parallel(n_jobs=1)(delayed(segmentImage)(naip_file) for naip_file in all_naip_files)
-    Parallel(n_jobs=4)(delayed(generateStack)(naip_file) for naip_file in all_naip_files)
-    print("\n--------------- Finished with all qquads ---------------\n")
