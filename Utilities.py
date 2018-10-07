@@ -13,6 +13,34 @@ from irods.session import iRODSSession
 import fiona
 
 
+def initializeDirectoryStructure(base_data_directory):
+    global base_dir, naip_dir, inputs_dir, training_stack_dir, segmentedImagesDir, base_landsatdir, ndsi_qquad_dir,\
+        ndwi_qquad_dir, landsat_qquad_dir, slope_qquad_dir, loc_classifiedQuarterQuads, o_veg_loc
+
+    base_dir = os.path.abspath(base_data_directory)
+
+    print("Initializing directory structure at {} and setting directory names as globals".format(base_dir))
+
+    naip_dir = os.path.join(base_dir, "NAIP")
+    inputs_dir = os.path.join(base_dir, "initial_model_inputs")
+
+    for dir in [inputs_dir, naip_dir]:
+        if not os.path.exists(dir):
+            spacer = "-------------------------------------------------------------"
+            print("{}\nERROR - Unable to locate MANDATORY data directory '{}'. Exiting\n{}".format(spacer, dir, spacer))
+            exit()
+
+    training_stack_dir = useDirectory(os.path.join(base_dir, "TrainingImageStack"))
+    segmentedImagesDir = useDirectory(os.path.join(base_dir, "SegmentedNAIPImages"))
+    base_landsatdir = useDirectory(os.path.join(base_dir, "Landsat8"))
+    ndsi_qquad_dir = useDirectory(os.path.join(base_dir, "NDSI"))
+    ndwi_qquad_dir = useDirectory(os.path.join(base_dir, "NDWI"))
+    landsat_qquad_dir = useDirectory(os.path.join(base_landsatdir, "byNAIPDOY_QQuads"))
+    slope_qquad_dir = useDirectory(os.path.join(base_dir, "Slope"))
+    loc_classifiedQuarterQuads = useDirectory(os.path.join(base_dir, "classifiedQuarterQuads"))
+    o_veg_loc = useDirectory(os.path.join(base_dir, "RiparianClass_VBs"))
+
+
 def getParentDir(p):
     return os.path.abspath(os.path.join(p, os.pardir))
 
@@ -187,12 +215,20 @@ def getFullNAIPPath(naip_file, naipdir, irodsfiles={}):
 
 
 def getFilesonDE(base_path="/iplant/home/bhickson/2015/Data"):
-    pw = "Cinco12#"
-    session = iRODSSession(host='data.cyverse.org', zone="iplant", port=1247, user='bhickson', password=pw)
+    pw_file = "./pw_file.txt"
+    try:
+        with open(pw_file) as pf:
+            pw = pf.readlines(0)[0].strip()
 
-    data_col = session.collections.get(base_path)
+        session = iRODSSession(host='data.cyverse.org', zone="iplant", port=1247, user='bhickson', password=pw)
+
+        data_col = session.collections.get(base_path)
+    except:
+        print("Unable to make connection to discover env. Continuing...")
+        return None, {}
 
     ifiles = {}
+
     def getFilesandDirs(dir):
         #print(dir.name)
         files_list = dir.data_objects

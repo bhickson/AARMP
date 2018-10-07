@@ -165,41 +165,42 @@ def rasterizeBufferedFlowlines(features_df, attrib, sample_raster, out_raster, o
         return out_raster
 
 
-def createVBETValleyBottom(indir, watershedsDir, slope_thresh_dict, drainage_thresh_dict, overwrite=False, cleanup=False):
+def createVBETValleyBottom(indir,
+                           slope_thresh_dict={"Small": 2, "Medium": 5, "Large": 22},
+                           drainage_thresh_dict={"Low": 40000, "High": 1000000},
+                           overwrite=False, cleanup=False):
     """ Creates a single output valley bottom using the VBET methodology. First iterates watersheds directory 
     for each HUC4 watersheds and """
 
     # The final output of the script
-    vbet_allwatersheds = os.path.join(indir, "NHD_ValleyBottoms.tif")
+    vbet_allwatersheds = os.path.join(indir, "VBET_ValleyBottoms.tif")
+
+    watersheds_dir = os.path.join(indir, "Watersheds")
 
     # Watershed Size Column Name
     watershed_col = "TotDASqKm"
 
     if not os.path.exists(vbet_allwatersheds) or overwrite:
-        localLog.info("\nValley Bottom Raster based on VBET methodology doesn't exist. Beginning creation.\n")
-        # Final output file doesn't exist, begin creation
+        localLog.info("\nValley Bottom Raster based on VBET methodology doesn't exist. Beginning creation with "
+                      "parameters:\n"
+                      "\tSmall Slope Threshold: {}\n"
+                      "\tMedium Slope Threshold: {}\n"
+                      "\tLarge Slope Threshold: {}\n\n"
+                      "\tLow Drainage Threshold: {}\n"
+                      "\tHigh Drainage Threshold: {}\n").format(slope_thresh_dict["Small"], slope_thresh_dict["Medium"],
+                                                                slope_thresh_dict["Large"], drainage_thresh_dict["Low"],
+                                                                drainage_thresh_dict["High"])
 
         flow_acc_thresh = 2000  # minimum flow accumulation size to identify stream
-        # ValleyBottomRastersPrep.vb_prep(watershedsDir, flow_initiation_threshold=flow_acc_thresh)
-
-        # Need to divide by 1000 because of the PercentRise calculation used in Esri's Slope Determination. Just a component of predictor variables.
-        #lrgSlopeThresh = lrgSlopeThresh / 1000
-        #medSlopeThresh = medSlopeThresh / 1000
-        #smSlopeThresh = smSlopeThresh / 1000
-
-        """ Creates a single output valley bottom using the VBET methodology. First iterates watersheds directory
-            for each HUC4 watersheds and """
-
-        # The final output of the script
-        # vbet_allwatersheds = os.path.join(indir, "VBET_ValleyBottoms.tif")
+        # ValleyBottomRastersPrep.vb_prep(watersheds_dir, flow_initiation_threshold=flow_acc_thresh)
 
         # Watershed Size Column Name
-        watershedsize_col = "TotDASqKm"
+        watershedsize_col = "TotDASqKm" # Total drainage area in square kilometers
         out_raster_name = "NHD_Buffer_SlopeClip.tif"
 
-        for w_dir in os.listdir(watershedsDir):
+        for w_dir in os.listdir(watersheds_dir):
             localLog.info("--- BEGINNING ON WATERSHED %s ---" % w_dir)
-            watershed_dir = os.path.join(watershedsDir, w_dir)
+            watershed_dir = os.path.join(watersheds_dir, w_dir)
             for subdir in os.listdir(watershed_dir):
                 if "Rasters" in subdir:
                     rasters_dir = os.path.join(watershed_dir, subdir)
@@ -404,11 +405,7 @@ if __name__ == '__main__':
 
     overwrite = True
     cleanup = False
-    vb_dir = os.path.abspath(r"M:\Data\ValleyBottoms")
-
-    # print("Using NHD directory %s" % nhd_dir)
-
-    watersheds_dir = os.path.join(vb_dir, "Watersheds")
+    vb_dir = os.path.abspath(r"..\Data\ValleyBottoms")
 
     """Large Slope Threshold: The value that represents the upper limit of slopes that will be included in the valley bottom
     for the 'large' portions of the network."""
@@ -435,5 +432,5 @@ if __name__ == '__main__':
 
     drainage_area_thresh = {"High": high_drainage_area_thresh, "Low": low_drainage_area_thresh}
 
-    createVBETValleyBottom(vb_dir, watersheds_dir, slope_thresholds, drainage_area_thresh,
+    createVBETValleyBottom(vb_dir, slope_thresholds, drainage_area_thresh,
                            overwrite=True, cleanup=False)
