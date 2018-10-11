@@ -28,6 +28,7 @@ import VBET_ValleyBottomModel
 
 import logging
 from joblib import Parallel, delayed
+from glob import glob
 
 
 def getFullNAIPPath(naip_file, naipdir):
@@ -166,10 +167,12 @@ def getQQuadFromNAIP(f):
     return qquad
 
 
-def createClassifiedFile(loc_NAIPFile, rf_classifier, rf_args, mltype="RF", overwrite=False):
+def createClassifiedFile(loc_NAIPFile, base_data_dir, rf_classifier, rf_args, mltype="RF", overwrite=False):
     beg = datetime.now()
     print("Starting on qquad: %s" % loc_NAIPFile)
     logger.debug("Starting on qquad: %s" % loc_NAIPFile)
+
+    utils.initializeDirectoryStructure(base_data_dir)
 
     file = os.path.basename(loc_NAIPFile)
 
@@ -183,9 +186,9 @@ def createClassifiedFile(loc_NAIPFile, rf_classifier, rf_args, mltype="RF", over
         raise (ValueError)
 
     loc_classified_file = os.path.join(utils.loc_classifiedQuarterQuads, output_fname)
-    print("loc_classified_file; ", loc_classified_file)
+    print("loc_classified_file: {}".format(loc_classified_file))
 
-    if not os.path.exists(loc_classified_file) or overwrite:
+    if (not os.path.exists(loc_classified_file) and output_fname not in irods_files) or overwrite:
         cl_start = datetime.now()
         logging.info("\tClassifying landcover file at %s..." % (loc_classified_file))
         # loc_NAIPFile = os.path.join(root, file)
@@ -204,11 +207,9 @@ def createClassifiedFile(loc_NAIPFile, rf_classifier, rf_args, mltype="RF", over
         # bands_data = np.dstack(bands_data)
         # CREATE VARIABLES OF ROWS, COLUMNS, AND NUMBER OF BANDS
         with rio.open(training_raster) as tras:
-            print(tras)
             bands_data = tras.read()
 
         scikit_array = np.moveaxis(bands_data, 0, -1)
-        print(scikit_array.shape)
         rows, cols, n_bands = scikit_array.shape
         n_samples = rows * cols
 
@@ -265,126 +266,130 @@ def createClassifiedFile(loc_NAIPFile, rf_classifier, rf_args, mltype="RF", over
         logging.info("LandCover file %s exists and no overwrite." % loc_classified_file)
 
 
-    quadrant_loc = utils.useDirectory(os.path.join(utils.o_veg_loc, qquad[:5]))
-    riparian_class_qquad = os.path.join(quadrant_loc, "RiparianClassification_" + qquad + ".tif")
-
-    if not os.path.exists(riparian_class_qquad) or overwrite:
-        createRiparianClass(loc_classified_file, riparian_class_qquad, qquad)
-
-    spacer = "_____________________________________________________________________________________"
-    logger.debug("COMPLETED riparian classification for file {}\n\tFinished in {}\n{}".format(
-        loc_NAIPFile, (datetime.now() - beg), spacer))
+    #createRiparianClass(loc_classified_file)
 
     return loc_classified_file
 
 
-def createRiparianClass(lc_raster, o_file, qquad):
-    rc_start = datetime.now()
-    logging.info("\tClassifying riparian zones for %s" % lc_raster)
-    with rio.open(lc_raster) as class_file:
-        class_array = class_file.read(1)  # _band(1)
-        kwargs = class_file.profile
-        resx = kwargs.transform[0]
+def createRiparianClass(lc_raster):
 
-    # Get average densities of each class across the whole raster.
+    qquad = lc_raster[-14:-4]  # M:\Data\classifiedQuarterQuads\RF_D250E100MPL50_3110930_nw.tif -> 3110930_nw
 
-    # TODO - Update this to evaluate on something more specific than the qquad area
-    dense_veg_array = np.where(class_array == 1, 1, 0)
-    dense_file_avg = np.mean(dense_veg_array)
-    sparse_veg_array = np.where(class_array == 2, 1, 0)
-    sparse_file_avg = np.mean(sparse_veg_array)
+    quadrant_loc = utils.useDirectory(os.path.join(utils.o_veg_loc, qquad[:5]))
+    riparian_class_qquad = os.path.join(quadrant_loc, "RiparianClassification_" + qquad + ".tif")
 
-    vaa_meters = veg_assessment_area * 4046.86
-    vaa_radius = math.sqrt(vaa_meters / math.pi)
-    vaa_diameter_meters = vaa_radius * 2
-    vaa_diameter_pixels = vaa_diameter_meters/resx
+    if not os.path.exists(riparian_class_qquad) or overwrite:
+        rc_start = datetime.now()
+        logging.info("\tClassifying riparian zones for %s" % lc_raster)
+        with rio.open(lc_raster) as class_file:
+            class_array = class_file.read(1)  # _band(1)
+            kwargs = class_file.profile
+            resx = class_file.transform[0]
 
-    sparse_veg_array_localmean = ndimage.uniform_filter(sparse_veg_array.astype(np.float32), size=vaa_diameter_pixels,
-                                                        mode='constant')
-    dense_veg_array_localmean = ndimage.uniform_filter(dense_veg_array.astype(np.float32), size=vaa_diameter_pixels,
-                                                       mode='constant')
+        # Get average densities of each class across the whole raster.
 
-    # TODO - Specify these as inputs
-    # ------------------------------------------------
-    # CRITICAL : Identify the splits where xero, meso, and hydro will be identified
-    # based on density of sparse and thick vegetation
+        # TODO - Update this to evaluate on something more specific than the qquad area
+        dense_veg_array = np.where(class_array == 1, 1, 0)
+        dense_file_avg = np.mean(dense_veg_array)
+        sparse_veg_array = np.where(class_array == 2, 1, 0)
+        sparse_file_avg = np.mean(sparse_veg_array)
 
-    sparse_xero_lowlimit = sparse_file_avg + np.std(sparse_veg_array_localmean)
-    sparse_meso_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * 0.7
-    sparse_hydro_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * 0.9
+        vaa_meters = veg_assessment_area * 4046.86
+        vaa_radius = math.sqrt(vaa_meters / math.pi)
+        vaa_diameter_meters = vaa_radius * 2
+        vaa_diameter_pixels = vaa_diameter_meters/resx
 
-    dense_xero_lowlimit = dense_file_avg + np.std(dense_veg_array_localmean)
-    dense_meso_lowlimit = dense_file_avg + (1 - dense_file_avg) * 0.7
-    dense_hydro_lowlimit = dense_file_avg + (1 - dense_file_avg) * 0.9
+        sparse_veg_array_localmean = ndimage.uniform_filter(sparse_veg_array.astype(np.float32), size=vaa_diameter_pixels,
+                                                            mode='constant')
+        dense_veg_array_localmean = ndimage.uniform_filter(dense_veg_array.astype(np.float32), size=vaa_diameter_pixels,
+                                                           mode='constant')
 
-    # ------------------------------------------------
+        # TODO - Specify these as inputs
+        # ------------------------------------------------
+        # CRITICAL : Identify the splits where xero, meso, and hydro will be identified
+        # based on density of sparse and thick vegetation
+        sparse_stdev = np.std(sparse_veg_array_localmean)
+        sparse_xero_lowlimit = sparse_file_avg + sparse_stdev
+        sparse_meso_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * 0.7
+        sparse_hydro_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * 0.9
 
-    # Reassign pixel values based on density assessment
-    sparse_local_xero = np.where(sparse_veg_array_localmean > sparse_xero_lowlimit, 1,
-                                 0)  # xero (1) if true, upland (0) if false
-    sparse_local_meso = np.where(sparse_veg_array_localmean > sparse_meso_lowlimit, 2,
-                                 0)  # meso (2) if true, upland (0) if false
-    sparse_local_hydro = np.where(sparse_veg_array_localmean > sparse_hydro_lowlimit, 3,
-                                  0)  # hydro (3) if true, upland (0) if false
-    # For some reason can't take numpy.maximum from more than two arrays at once
-    sparse_combine = np.maximum(sparse_local_xero, sparse_local_meso)  # , sparse_local_hydro)
-    sparse_combine = np.maximum(sparse_combine, sparse_local_hydro)
+        dense_stdev = np.std(sparse_veg_array_localmean)
+        dense_xero_lowlimit = dense_file_avg + dense_stdev
+        dense_meso_lowlimit = dense_file_avg + (1 - dense_file_avg) * 0.7
+        dense_hydro_lowlimit = dense_file_avg + (1 - dense_file_avg) * 0.9
 
-    dense_local_xero = np.where(dense_veg_array_localmean > dense_xero_lowlimit, 1,
-                                0)  # xero (1) if true, upland (0) if false
-    dense_local_meso = np.where(dense_veg_array_localmean > dense_meso_lowlimit, 2,
-                                0)  # meso (2) if true, upland (0) if false
-    dense_local_hydro = np.where(dense_veg_array_localmean > dense_hydro_lowlimit, 3,
-                                 0)  # hydro (3) if true, upland (0) if false
-    # For some reason can't take numpy.maximum from more than two arrays at once
-    dense_combine = np.maximum(dense_local_xero, dense_local_meso)  # , sparse_local_hydro)
-    dense_combine = np.maximum(dense_combine, dense_local_hydro)
+        # ------------------------------------------------
 
-    # COMPARISON OF DENSITY VALUES OF BOTH RASTERS AT EACH PIXEL FOR
-    # DETERMINATION. ESSENTAILLY A DECISION TREE
-    p = np.where(dense_combine == 0, np.where(sparse_combine == 0, 0, 0), 0)  # if dense is 0 and sparse is 0, 0
-    o = np.where(dense_combine == 0, np.where(sparse_combine == 1, 1, p), p)  # if dense is 0 and sparse is 1, 1, otherwise p
-    n = np.where(dense_combine == 0, np.where(sparse_combine == 2, 2, o), o)  # if dense is 0 and sparse is 2, 2, otherwise o
-    m = np.where(dense_combine == 0, np.where(sparse_combine == 3, 3, n), n)  # if dense is 0 and sparse is 3, 3, otherwise n
-    l = np.where(dense_combine == 1, np.where(sparse_combine == 0, 1, m), m)  # if dense is 1 and sparse is 0, 1, otherwise m
-    k = np.where(dense_combine == 1, np.where(sparse_combine == 1, 1, l), l)  # if dense is 1 and sparse is 1, l, otherwise l
-    j = np.where(dense_combine == 1, np.where(sparse_combine == 2, 2, k), k)  # if dense is 1 and sparse is 2, 2, otherwise k
-    i = np.where(dense_combine == 1, np.where(sparse_combine == 3, 3, j), j)  # if dense is 1 and sparse is 3, 3, otherwise j
-    h = np.where(dense_combine == 2, np.where(sparse_combine == 0, 1, i), i)  # if dense is 2 and sparse is 0, 1, otherwise i
-    g = np.where(dense_combine == 2, np.where(sparse_combine == 1, 2, h), h)  # if dense is 2 and sparse is 1, 2, otherwise h
-    f = np.where(dense_combine == 2, np.where(sparse_combine == 2, 2, g), g)  # if dense is 2 and sparse is 2, 2, otherwise g
-    e = np.where(dense_combine == 2, np.where(sparse_combine == 3, 3, f), f)  # if dense is 2 and sparse is 3, 3, otherwise g
-    d = np.where(dense_combine == 3, np.where(sparse_combine == 0, 2, e), e)  # if dense is 3 and sparse is 0, 2, otherwise e
-    c = np.where(dense_combine == 3, np.where(sparse_combine == 1, 2, d), d)  # if dense is 3 and sparse is 1, 2, otherwise d
-    b = np.where(dense_combine == 3, np.where(sparse_combine == 2, 3, c), c)  # if dense is 3 and sparse is 2, 3, otherwise c
-    riparian = np.where(dense_combine == 3, np.where(sparse_combine == 3, 3, b), b)  # if dense is 3 and sparse is 3, 3, otherwise b
+        # Reassign pixel values based on density assessment
+        sparse_local_xero = np.where(sparse_veg_array_localmean > sparse_xero_lowlimit, 1,
+                                     0)  # xero (1) if true, upland (0) if false
+        sparse_local_meso = np.where(sparse_veg_array_localmean > sparse_meso_lowlimit, 2,
+                                     0)  # meso (2) if true, upland (0) if false
+        sparse_local_hydro = np.where(sparse_veg_array_localmean > sparse_hydro_lowlimit, 3,
+                                      0)  # hydro (3) if true, upland (0) if false
+        # For some reason can't take numpy.maximum from more than two arrays at once
+        sparse_combine = np.maximum(sparse_local_xero, sparse_local_meso)  # , sparse_local_hydro)
+        sparse_combine = np.maximum(sparse_combine, sparse_local_hydro)
 
-    kwargs.update(
-        dtype=np.uint8,
-        nodata=0,
-        compress='lzw'
-    )
+        dense_local_xero = np.where(dense_veg_array_localmean > dense_xero_lowlimit, 1,
+                                    0)  # xero (1) if true, upland (0) if false
+        dense_local_meso = np.where(dense_veg_array_localmean > dense_meso_lowlimit, 2,
+                                    0)  # meso (2) if true, upland (0) if false
+        dense_local_hydro = np.where(dense_veg_array_localmean > dense_hydro_lowlimit, 3,
+                                     0)  # hydro (3) if true, upland (0) if false
+        # For some reason can't take numpy.maximum from more than two arrays at once
+        dense_combine = np.maximum(dense_local_xero, dense_local_meso)  # , sparse_local_hydro)
+        dense_combine = np.maximum(dense_combine, dense_local_hydro)
 
-    valleybottom_ras = findVBRaster(qquad)
+        # COMPARISON OF DENSITY VALUES OF BOTH RASTERS AT EACH PIXEL FOR DETERMINATION (ESSENTAILLY A DECISION TREE)
+        # 0 is upland, 1 is xero, 2 is meso, 3 is hydro
+        p = np.where(dense_combine == 0, np.where(sparse_combine == 0, 0, 0), 0)  # if dense is 0 and sparse is 0, 0
+        o = np.where(dense_combine == 0, np.where(sparse_combine == 1, 1, p), p)  # if dense is 0 and sparse is 1, 1, otherwise p
+        n = np.where(dense_combine == 0, np.where(sparse_combine == 2, 2, o), o)  # if dense is 0 and sparse is 2, 2, otherwise o
+        m = np.where(dense_combine == 0, np.where(sparse_combine == 3, 3, n), n)  # if dense is 0 and sparse is 3, 3, otherwise n
+        l = np.where(dense_combine == 1, np.where(sparse_combine == 0, 1, m), m)  # if dense is 1 and sparse is 0, 1, otherwise m
+        k = np.where(dense_combine == 1, np.where(sparse_combine == 1, 1, l), l)  # if dense is 1 and sparse is 1, l, otherwise l
+        j = np.where(dense_combine == 1, np.where(sparse_combine == 2, 2, k), k)  # if dense is 1 and sparse is 2, 2, otherwise k
+        i = np.where(dense_combine == 1, np.where(sparse_combine == 3, 3, j), j)  # if dense is 1 and sparse is 3, 3, otherwise j
+        h = np.where(dense_combine == 2, np.where(sparse_combine == 0, 1, i), i)  # if dense is 2 and sparse is 0, 1, otherwise i
+        g = np.where(dense_combine == 2, np.where(sparse_combine == 1, 2, h), h)  # if dense is 2 and sparse is 1, 2, otherwise h
+        f = np.where(dense_combine == 2, np.where(sparse_combine == 2, 2, g), g)  # if dense is 2 and sparse is 2, 2, otherwise g
+        e = np.where(dense_combine == 2, np.where(sparse_combine == 3, 3, f), f)  # if dense is 2 and sparse is 3, 3, otherwise g
+        d = np.where(dense_combine == 3, np.where(sparse_combine == 0, 2, e), e)  # if dense is 3 and sparse is 0, 2, otherwise e
+        c = np.where(dense_combine == 3, np.where(sparse_combine == 1, 2, d), d)  # if dense is 3 and sparse is 1, 2, otherwise d
+        b = np.where(dense_combine == 3, np.where(sparse_combine == 2, 3, c), c)  # if dense is 3 and sparse is 2, 3, otherwise c
+        riparian = np.where(dense_combine == 3, np.where(sparse_combine == 3, 3, b), b)  # if dense is 3 and sparse is 3, 3, otherwise b
 
-    with rio.open(valleybottom_ras) as vb_raster:
-        vb_array = vb_raster.read(1).astype(np.float32)
+        kwargs.update(
+            dtype=np.uint8,
+            nodata=0,
+            compress='lzw'
+        )
 
-    # print("Clipping to Valley Bottoms")
-    clipped_riparian = np.where(vb_array > 1, riparian, 0)
+        valleybottom_ras = findVBRaster(qquad)
 
-    with rio.open(o_file, 'w', **kwargs) as dst:
-        dst.write_band(1, clipped_riparian.astype(np.uint8))
+        with rio.open(valleybottom_ras) as vb_raster:
+            vb_array = vb_raster.read(1).astype(np.float32)
 
-        dst.write_colormap(
-            1, {
-                0: (255, 255, 255),
-                1: (186, 228, 179),
-                2: (116, 196, 118),
-                3: (35, 139, 69)})
-        cmap = dst.colormap(1)
+        # print("Clipping to Valley Bottoms")
+        clipped_riparian = np.where(vb_array > 1, riparian, 0)
 
-    logging.info("\tFinished riparian classification in %s" % (str(datetime.now() - rc_start)))
+        with rio.open(riparian_class_qquad, 'w', **kwargs) as dst:
+            dst.write_band(1, clipped_riparian.astype(np.uint8))
+
+            dst.write_colormap(
+                1, {
+                    0: (255, 255, 255),
+                    1: (186, 228, 179),
+                    2: (116, 196, 118),
+                    3: (35, 139, 69)})
+            cmap = dst.colormap(1)
+
+        spacer = "_____________________________________________________________________________________"
+        logger.debug("\tCOMPLETED riparian classification for quarter-quad {}\n\tFinished in {}\n\t{}".format(
+            qquad, (datetime.now() - rc_start), spacer))
+    else:
+        print("\n\tClassified riparian file {} already exists and overwrite not set.\n".format(riparian_class_qquad))
 
 
 def findVBRaster(qquad, overwrite=False):
@@ -660,7 +665,10 @@ def initiateClassification(quads, base_date_directory, model, model_args):
         (delayed(segmentImage)(naip_file, utils.segmentedImagesDir, return_data=False) for naip_file in quads)
 
     Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
-        (delayed(createClassifiedFile)(naip_file, model, model_args, overwrite=False) for naip_file in quads)
+        (delayed(createClassifiedFile)(naip_file, base_date_directory, model, model_args, overwrite=False) for naip_file in quads)
+
+    Parallel(Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
+        (delayed(createRiparianClass)(lc_file, overwrite=False) for lc_file in glob(utils.o_veg_loc + "\*\*.tif")))
 
 
 def createClassification(aoi, dataDir=False, vaa=0.1):
@@ -691,7 +699,7 @@ def createClassification(aoi, dataDir=False, vaa=0.1):
 
     #day = datetime.today().strftime('%Y%m%d')
     #loc_classifiedQuarterQuads = utils.useDirectory(os.path.join(utils.base_dir, "classifiedQuarterQuads"# + day))
-    print("Classified files will be written out to '{}'".format(utils.loc_classifiedQuarterQuads))
+    print("\nClassified files will be written out to '{}'".format(utils.loc_classifiedQuarterQuads))
 
     loc_classifier = os.path.join(utils.inputs_dir, "RandomForestClassifier.joblib.pkl")
 
@@ -706,12 +714,14 @@ def createClassification(aoi, dataDir=False, vaa=0.1):
     rf = getClassifier(loc_classifier, loc_class_polygons, loc_usgs_qquads,
                                                     utils.base_dir, rf_args, createClassifier=False)
 
-    irods_sess, irods_files = utils.getFilesonDE()
+    irods_data_path = "/iplant/home/bhickson/2015/Data"
+    global irods_files
+    irods_sess, irods_files = utils.getFilesonDE(irods_data_path)
 
     footprints = gpd.read_file(loc_usgs_qquads)
     aoi.to_crs(footprints.crs, inplace=True)
 
-    print("Intersection quarter-quad grid with AOI to find relevant quarter-quads")
+    print("\nIntersecting quarter-quad grid with AOI to find relevant quarter-quads")
     aoi_qquads = []
     for j, arow in aoi.iterrows():
         for i, row in footprints.iterrows():
@@ -724,7 +734,6 @@ def createClassification(aoi, dataDir=False, vaa=0.1):
     if len(aoi_qquads) == 0:
         print("Error - no quarter quads found intersecting AOI. Exiting")
         raise Exception
-
 
     initiateClassification(aoi_qquads, utils.base_dir, rf, rf_args)
 
@@ -746,7 +755,5 @@ if __name__ == "__main__":
     base_data_dir = os.path.abspath(r"M:\Data")
 
     area_of_interest = gpd.read_file(os.path.abspath(r"M:\Data\initial_model_inputs\Ecoregions_AOI.gpkg"))
-
-    #utils.initializeDirectoryStructure(base_data_dir)
 
     createClassification(area_of_interest, dataDir=base_data_dir, vaa=vegetation_assessment_area)

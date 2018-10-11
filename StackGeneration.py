@@ -24,7 +24,6 @@ import gdal
 import logging as logger
 import fiona
 
-from Utilities import getFullNAIPPath
 import Utilities as utils
 
 from irods.session import iRODSSession
@@ -237,10 +236,10 @@ def getSubSetLandsat(naip_path, landsat_file, opath, overwrite=False, return_dat
     landsat_opath = os.path.join(opath, ofile)
     try:
         if not os.path.exists(landsat_opath) or overwrite:
-            if ofile in irods_files.keys() and return_data == True:
+            """if ofile in utils.ifiles.keys() and return_data == True:
                 # download from de
 
-                irods_path = irods_files[ofile]
+                irods_path = utils.ifiles[ofile]
                 # downloadFromDE(irods_path, landsat_opath)
                 get_command = "iget -K " + irods_path
                 print("Downloading from iRods DE...")
@@ -257,7 +256,7 @@ def getSubSetLandsat(naip_path, landsat_file, opath, overwrite=False, return_dat
 
                 print("\tBringing in landsat array from %s ..." % landsat_opath)
                 return lras_array.astype(np.int16)
-
+            """
             start = datetime.now()
             reference_f = gdal.Open(naip_path)
             geo_transform = reference_f.GetGeoTransform()
@@ -326,9 +325,6 @@ def generateStack(loc_NAIPFile, base_directory=r"../Data", veg_indicies=["NDVI",
 
     slope_file = os.path.join(utils.slope_qquad_dir, "Slope-Degrees_AZ.tif")
 
-    if not os.path.exists(training_stack_dir):
-        os.mkdir(training_stack_dir)
-
     # Specify the order of the NAIP bands - should never change
     naip_band_order = {1: "RED", 2: "GREEN", 3: "BLUE", 4: "NIR"}
 
@@ -336,25 +332,24 @@ def generateStack(loc_NAIPFile, base_directory=r"../Data", veg_indicies=["NDVI",
     np.seterr(divide='ignore', invalid='ignore')
 
     ofile_name = os.path.basename(loc_NAIPFile)[:-4] + "_TrainingStack.tif"
-    o_file = os.path.join(training_stack_dir, ofile_name)
-
-    irods_data_path = "/iplant/home/bhickson/2015/Data"
-    irods_sess, irods_files = getFilesonDE(irods_data_path)
+    o_file = os.path.join(utils.training_stack_dir, ofile_name)
 
     # IF FILE ON DE, DOWNLOAD
     # BEN YOU PUT THIS HERE TO ACCOUNT FOR SLOPE OVERWRITE. DE FILE AND LOCAL FILE MAY HAVE 22 BANDS
     if not os.path.exists(o_file):
-        if ofile_name in irods_files.keys():
+        """
+        if ofile_name in utils.ifiles:
             print("\tFound {} in Cyverse DE. Downloading...".format(ofile_name))
             # download from de
-            irods_path = irods_files[ofile_name]
+            irods_path = utils.ifiles[ofile_name]
 
             # downloadFromDE(irods_path, landsat_opath)
             get_command = "iget -K " + irods_path
 
             os.system(get_command)
 
-            shutil.move(ofile_name, training_stack_dir)
+            shutil.move(ofile_name, utils.training_stack_dir)
+        """
 
     if not os.path.exists(o_file) or overwrite:
         start = datetime.now()
@@ -516,10 +511,8 @@ if __name__ == '__main__':
     logger.basicConfig(level=logger.INFO)
 
     print("\nCreating irods files dict...\n")
-    global irods_files
-
     irods_data_path = "/iplant/home/bhickson/2015/Data"
-    irods_sess, irods_files = getFilesonDE(irods_data_path)
+    utils.getFilesonDE(irods_data_path)
 
 
     bdd = os.path.abspath(r"../Data")
@@ -530,7 +523,7 @@ if __name__ == '__main__':
     # GET LOCAL LIST OF TRAINING STACKS
     existing_ts = glob(training_stack_dir + "/*.tif")
     # GET LIST OF NAIP FILES ON CYVERSE DE
-    irods_naip_sess, irods_naip_files = getFilesonDE(irods_data_path + "/NAIP")
+
 
     """
     print("\n--------------- Starting with training qquads ---------------\n")
@@ -573,7 +566,7 @@ if __name__ == '__main__':
     for i, row in footprints.iterrows():
         for j, arow in aoi.iterrows():
             if row.geometry.intersects(arow.geometry):
-                fpath = getFullNAIPPath(row.QUADID, os.path.join(bdd, "NAIP"), irods_naip_files)
+                fpath = utils.getFullNAIPPath(row.QUADID, os.path.join(bdd, "NAIP"), irods_naip_files)
                 basename = os.path.basename(fpath)
                 aoi_qquads.append(fpath)
                 for f in existing_ts:

@@ -227,6 +227,7 @@ def getFilesonDE(base_path="/iplant/home/bhickson/2015/Data"):
         print("Unable to make connection to discover env. Continuing...")
         return None, {}
 
+    global ifiles
     ifiles = {}
 
     def getFilesandDirs(dir):
@@ -241,6 +242,7 @@ def getFilesonDE(base_path="/iplant/home/bhickson/2015/Data"):
             getFilesandDirs(sub_dir)
 
     getFilesandDirs(data_col)
+    print("\t{} files found on Cyverse Discovery Environment in directory {}".format(len(ifiles),base_path))
 
     return session, ifiles
 
