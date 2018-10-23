@@ -14,12 +14,12 @@ import fiona
 
 
 def initializeDirectoryStructure(base_data_directory):
-    global base_dir, naip_dir, inputs_dir, training_stack_dir, segmentedImagesDir, base_landsatdir, ndsi_qquad_dir,\
-        ndwi_qquad_dir, landsat_qquad_dir, slope_qquad_dir, loc_classifiedQuarterQuads, o_veg_loc
+    global base_dir, naip_dir, inputs_dir, valley_bottom_dir, training_stack_dir, segmentedImagesDir, base_landsatdir, \
+        ndsi_qquad_dir, ndwi_qquad_dir, landsat_qquad_dir, slope_qquad_dir, loc_classifiedQuarterQuads, o_veg_loc
 
     base_dir = os.path.abspath(base_data_directory)
 
-    print("Initializing directory structure at {} and setting directory names as globals".format(base_dir))
+    #print("Initializing directory structure at {} and setting directory names as globals".format(base_dir))
 
     naip_dir = os.path.join(base_dir, "NAIP")
     inputs_dir = os.path.join(base_dir, "initial_model_inputs")
@@ -30,6 +30,7 @@ def initializeDirectoryStructure(base_data_directory):
             print("{}\nERROR - Unable to locate MANDATORY data directory '{}'. Exiting\n{}".format(spacer, dir, spacer))
             exit()
 
+    valley_bottom_dir = useDirectory(os.path.join(base_dir, "ValleyBottoms"))
     training_stack_dir = useDirectory(os.path.join(base_dir, "TrainingImageStack"))
     segmentedImagesDir = useDirectory(os.path.join(base_dir, "SegmentedNAIPImages"))
     base_landsatdir = useDirectory(os.path.join(base_dir, "Landsat8"))
@@ -166,7 +167,6 @@ def getNHDData(directory):
 
 def mergeRasters(files, outfile):
     """ Function takes a given list of file paths and merges to given output file """
-    print(files)
     print("Beginning merge of :\n\t%s" % ("\n\t".join(files)))
 
     with rio.open(files[0]) as ras:

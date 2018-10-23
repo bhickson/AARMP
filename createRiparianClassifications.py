@@ -157,7 +157,7 @@ def write_geotiff(fname, data, geo_transform, projection, classes, COLORS, data_
 
 
 def report_and_exit(txt, *args, **kwargs):
-    logger.error(txt, *args, **kwargs)
+    logging.error(txt, *args, **kwargs)
     exit(1)
 
 
@@ -170,7 +170,7 @@ def getQQuadFromNAIP(f):
 def createClassifiedFile(loc_NAIPFile, base_data_dir, rf_classifier, rf_args, mltype="RF", overwrite=False):
     beg = datetime.now()
     print("Starting on qquad: %s" % loc_NAIPFile)
-    logger.debug("Starting on qquad: %s" % loc_NAIPFile)
+    logging.debug("Starting on qquad: %s" % loc_NAIPFile)
 
     utils.initializeDirectoryStructure(base_data_dir)
 
@@ -188,7 +188,9 @@ def createClassifiedFile(loc_NAIPFile, base_data_dir, rf_classifier, rf_args, ml
     loc_classified_file = os.path.join(utils.loc_classifiedQuarterQuads, output_fname)
     print("loc_classified_file: {}".format(loc_classified_file))
 
-    if (not os.path.exists(loc_classified_file) and output_fname not in irods_files) or overwrite:
+    irods_session, cqqs_files_de = utils.getFilesonDE("/iplant/home/bhickson/2015/Data/classifiedQuarterQuads")
+
+    if (not os.path.exists(loc_classified_file) and output_fname not in cqqs_files_de) or overwrite:
         cl_start = datetime.now()
         logging.info("\tClassifying landcover file at %s..." % (loc_classified_file))
         # loc_NAIPFile = os.path.join(root, file)
@@ -263,17 +265,20 @@ def createClassifiedFile(loc_NAIPFile, base_data_dir, rf_classifier, rf_args, ml
         del flat_pixels
 
     else:
-        logging.info("LandCover file %s exists and no overwrite." % loc_classified_file)
-
-
-    #createRiparianClass(loc_classified_file)
+        logging.info("LandCover file {} exists and no overwrite".format(loc_classified_file))
 
     return loc_classified_file
 
 
-def createRiparianClass(lc_raster):
+def createRiparianClass(lc_raster,
+                        data_dir="../Data",
+                        veg_assessment_area=0.1,
+                        riparian_limits={"xero_lim": "StdDev", "meso_lim": "StdDev", "hydro_lim": "StdDev"},
+                        overwrite=False):
 
-    qquad = lc_raster[-14:-4]  # M:\Data\classifiedQuarterQuads\RF_D250E100MPL50_3110930_nw.tif -> 3110930_nw
+    qquad = lc_raster[-14:-4]  # e.g. M:\Data\classifiedQuarterQuads\RF_D250E100MPL50_3110930_nw.tif -> 3110930_nw
+
+    utils.initializeDirectoryStructure(data_dir)
 
     quadrant_loc = utils.useDirectory(os.path.join(utils.o_veg_loc, qquad[:5]))
     riparian_class_qquad = os.path.join(quadrant_loc, "RiparianClassification_" + qquad + ".tif")
@@ -299,9 +304,11 @@ def createRiparianClass(lc_raster):
         vaa_diameter_meters = vaa_radius * 2
         vaa_diameter_pixels = vaa_diameter_meters/resx
 
-        sparse_veg_array_localmean = ndimage.uniform_filter(sparse_veg_array.astype(np.float32), size=vaa_diameter_pixels,
+        sparse_veg_array_localmean = ndimage.uniform_filter(sparse_veg_array.astype(np.float32),
+                                                            size=vaa_diameter_pixels,
                                                             mode='constant')
-        dense_veg_array_localmean = ndimage.uniform_filter(dense_veg_array.astype(np.float32), size=vaa_diameter_pixels,
+        dense_veg_array_localmean = ndimage.uniform_filter(dense_veg_array.astype(np.float32),
+                                                           size=vaa_diameter_pixels,
                                                            mode='constant')
 
         # TODO - Specify these as inputs
@@ -309,15 +316,40 @@ def createRiparianClass(lc_raster):
         # CRITICAL : Identify the splits where xero, meso, and hydro will be identified
         # based on density of sparse and thick vegetation
         sparse_stdev = np.std(sparse_veg_array_localmean)
-        sparse_xero_lowlimit = sparse_file_avg + sparse_stdev
-        sparse_meso_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * 0.7
-        sparse_hydro_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * 0.9
-
         dense_stdev = np.std(sparse_veg_array_localmean)
-        dense_xero_lowlimit = dense_file_avg + dense_stdev
-        dense_meso_lowlimit = dense_file_avg + (1 - dense_file_avg) * 0.7
-        dense_hydro_lowlimit = dense_file_avg + (1 - dense_file_avg) * 0.9
+        xero_lim = riparian_limits["xero_lim"]
+        meso_lim = riparian_limits["meso_lim"]
+        hydro_lim = riparian_limits["hydro_lim"]
 
+        if xero_lim == "StdDev":
+            sparse_xero_lowlimit = sparse_file_avg + (1 * sparse_stdev)
+            dense_xero_lowlimit = dense_file_avg + (1 * dense_stdev)
+        elif isinstance(xero_lim, (float)) and xero_lim < 1.0:
+            sparse_xero_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * xero_lim
+            dense_xero_lowlimit = dense_file_avg + (1 - dense_file_avg) * xero_lim
+        else:
+            print("Unknown type {} for mesoriparian classification limit. Must be 'StdDev' or float from 0 - 1.0")
+            raise ValueError
+
+        if meso_lim == "StdDev":
+            sparse_meso_lowlimit = sparse_file_avg + (2 * sparse_stdev)
+            dense_meso_lowlimit = dense_file_avg + (2 * dense_stdev)
+        elif isinstance(meso_lim, (float)) and meso_lim < 1.0:
+            sparse_meso_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * meso_lim
+            dense_meso_lowlimit = dense_file_avg + (1 - dense_file_avg) * meso_lim
+        else:
+            print("Unknown type {} for mesoriparian classification limit. Must be 'StdDev' or float from 0 - 1.0")
+            raise ValueError
+
+        if hydro_lim == "StdDev":
+            sparse_hydro_lowlimit = sparse_file_avg + (3 * sparse_stdev)
+            dense_hydro_lowlimit = dense_file_avg + (3 * dense_stdev)
+        elif isinstance(hydro_lim, (float)) and hydro_lim < 1.0:
+            sparse_hydro_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * hydro_lim
+            dense_hydro_lowlimit = dense_file_avg + (1 - dense_file_avg) * hydro_lim
+        else:
+            print("Unknown type {} for hydroriparian classification limit. Must be 'StdDev' or float from 0 - 1.0")
+            raise ValueError
         # ------------------------------------------------
 
         # Reassign pixel values based on density assessment
@@ -386,10 +418,12 @@ def createRiparianClass(lc_raster):
             cmap = dst.colormap(1)
 
         spacer = "_____________________________________________________________________________________"
-        logger.debug("\tCOMPLETED riparian classification for quarter-quad {}\n\tFinished in {}\n\t{}".format(
+        logging.debug("\tCOMPLETED riparian classification for quarter-quad {}\n\tFinished in {}\n\t{}".format(
             qquad, (datetime.now() - rc_start), spacer))
     else:
         print("\n\tClassified riparian file {} already exists and overwrite not set.\n".format(riparian_class_qquad))
+        with open("VegDone.txt", "a+") as txt:
+            txt.write(riparian_class_qquad + "\n")
 
 
 def findVBRaster(qquad, overwrite=False):
@@ -502,7 +536,7 @@ def extractToPoints(training_points, out_file, data_dir, overwrite=False):
         all = len(training_data_df)
         # ITERATE THROUGH DATAFRAME IN GROUPS BY NAIP_FILE. KEEPS US FROM OPENING/CLOSING RASTERS FOR EACH POINT - INSTEAD FOR EACH GROUP
         for loc_NAIPFile, group in training_data_df.groupby("NAIP_FILE"):
-            logger.debug("\nStarting raster value extraction for points in qquad %s" % loc_NAIPFile)
+            logging.debug("\nStarting raster value extraction for points in qquad %s" % loc_NAIPFile)
             print("\nStarting raster value extraction for points in qquad %s" % loc_NAIPFile)
             loc_NAIPFile.replace("\\", "/")  # normalize for windows paths
 
@@ -523,21 +557,21 @@ def extractToPoints(training_points, out_file, data_dir, overwrite=False):
 
             complete += len(group)
             percent_done = (complete/all) * 100
-            logger.debug("{}% Done - Finished with group %s at %s" % (percent_done, loc_NAIPFile, str(datetime.now())))
+            logging.debug("{}% Done - Finished with group %s at %s" % (percent_done, loc_NAIPFile, str(datetime.now())))
 
-        logger.info("Finished raster value extraction of %s points in %s" % (
+        logging.info("Finished raster value extraction of %s points in %s" % (
             str(len(training_data_df)), str(datetime.now() - ext_start)))
 
         # GEOPANDAS WON"T ALLOW MORE THAN ONE COLUMN WITH GEOMETRY TYPE. REMOVE THE utm_geom COLUMN CREATED PREVIOUSLY
         del training_data_df['utm_geom']
         # print("COLUMNS:\n\t{}".format(training_data_df.columns))
         print("WRITING DATAFRAME TO OUTPUT...")
-        logger.debug("WRITING DATAFRAME TO OUTPUT...")
+        logging.debug("WRITING DATAFRAME TO OUTPUT...")
         training_data_df.to_file(out_file)
 
     else:
         print("Reading in point file %s" % out_file)
-        logger.info("Reading in point file %s" % out_file)
+        logging.info("Reading in point file %s" % out_file)
 
         # BEN - UPDATE RASTERS NAMES READ
         training_data_df = gpd.read_file(out_file)
@@ -548,11 +582,13 @@ def extractToPoints(training_points, out_file, data_dir, overwrite=False):
     return {"training_points": training_data_df, "band_names": band_columns}
 
 
-def getClassifier(classifier_file, training_poly, usgs_qquads, data_directory, args, createClassifier=False):
+def getClassifier(classifier_file, training_poly, usgs_qquads, data_directory, args, veg_aa, riparian_limits, createClassifier=False):
     """ Either returns Random Forest classifier from file or creates a new one. If a new one will be created,
     build it from the input training data"""
 
     if not os.path.exists(classifier_file) or createClassifier:
+
+        predicted_column = "CLASS_PREDICT"
 
         training_points, rf_rasters = createTrainingData(training_poly, usgs_qquads, data_directory)
 
@@ -575,11 +611,11 @@ def getClassifier(classifier_file, training_poly, usgs_qquads, data_directory, a
                 if "Landsat" in r:
                     rf_rasters.remove(r)
 
-        logger.info("Using raster variables: \n%s" % rf_rasters)
+        logging.info("Using raster variables: \n%s" % rf_rasters)
 
         # TRAIN RANDOM FORESTS
         rf_start = datetime.now()
-        logger.info("Beginning Random Forest Train")
+        logging.info("Beginning Random Forest Train")
 
         rf_model = RandomForestClassifier(verbose=1, max_depth=args["maxdepth"], n_estimators=args["n_est"],
                                           n_jobs=args["n_job"], min_samples_leaf=args["min_per_leaf"],
@@ -590,7 +626,7 @@ def getClassifier(classifier_file, training_poly, usgs_qquads, data_directory, a
         rf_model.fit(training_data[rf_rasters].dropna(),
                      training_data[rf_rasters + ["Class"]].dropna()["Class"])
 
-        logger.info("Finished Fitting in", datetime.now() - rf_start)
+        logging.info("Finished Fitting in", datetime.now() - rf_start)
 
         # Save classifier to file
         _ = joblib.dump(rf_model, classifier_file, compress=9)
@@ -611,7 +647,7 @@ def getClassifier(classifier_file, training_poly, usgs_qquads, data_directory, a
 
         files_list = training_points["NAIP_FILE"].tolist()
         # CREATE CLASSIFIED RASTERS FOR QUARTER QUADS USED IN TRAINING DATA FIRST
-        initiateClassification(files_list, utils.base_dir, rf_model, args)
+        initiateClassification(files_list, utils.base_dir, rf_model, args, veg_aa, riparian_limits)
 
         # search classified quarter quad directory for classified file of quad
         for naip_file in files_list:
@@ -652,44 +688,62 @@ def createTrainingData(polygons, qquad_file, datadir):
 
     class_points = training_info["training_points"]
     band_names = training_info["band_names"]
-    logger.debug("Available raster variables: \n\t%s" % band_names)
+    logging.debug("Available raster variables: \n\t%s" % band_names)
 
     class_points["utm_geom"] = class_points.apply(calculateGeom, axis=1)
 
     return class_points, band_names
 
 
-def initiateClassification(quads, base_date_directory, model, model_args):
+
+def removeQuads(quad_list):
+    existing_class_quads = []
+    for file in glob(utils.loc_classifiedQuarterQuads + "/*.tif"):
+        qquad_name = os.path.basename(file)[-14:-4]
+        existing_class_quads.append(qquad_name)
+
+    duplist = quad_list[:]
+    for file in duplist:
+        qquad_name = os.path.basename(file)[2:12]
+        if qquad_name in existing_class_quads:
+            quad_list.remove(file)
+
+    return quad_list
+
+
+def initiateClassification(quads, base_date_directory, model, model_args, veg_aa, riparian_limits):
+    print("{} Quads passed".format(len(quads)))
+    quads = removeQuads(quads)
+    print("{} Quads Left".format(len(quads)))
 
     Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
         (delayed(segmentImage)(naip_file, utils.segmentedImagesDir, return_data=False) for naip_file in quads)
 
+    #or naip_file in quads:
+    #   createClassifiedFile(naip_file, base_date_directory, model, model_args, overwrite = False)
     Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
         (delayed(createClassifiedFile)(naip_file, base_date_directory, model, model_args, overwrite=False) for naip_file in quads)
 
     Parallel(Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
-        (delayed(createRiparianClass)(lc_file, overwrite=False) for lc_file in glob(utils.o_veg_loc + "\*\*.tif")))
+        (delayed(createRiparianClass)(lc_file, veg_assessment_area=veg_aa, riparian_limits=riparian_limits, overwrite=False, ) for lc_file in glob(utils.loc_classifiedQuarterQuads + "\*.tif")))
 
 
-def createClassification(aoi, dataDir=False, vaa=0.1):
+def createClassification(aoi, classifier_args, riparian_lims, dataDir=False, vaa=0.1,):
     if not dataDir:
         dataDir = os.path.abspath("../Data")
 
     utils.initializeDirectoryStructure(dataDir)
 
-    global veg_assessment_area, loc_valleybottoms, VBET_VB_loc, predicted_column
+    #valleybottoms_dir = os.path.join(utils.base_dir, "ValleyBottoms")
 
-    veg_assessment_area = vaa
-
-    valleybottoms_dir = os.path.join(utils.base_dir, "ValleyBottoms")
-
-    loc_valleybottoms = utils.useDirectory(os.path.join(valleybottoms_dir, "VBET_ValleyBottoms"))
-    VBET_VB_loc = os.path.join(valleybottoms_dir, "VBET_ValleyBottoms.tif")
+    global loc_valleybottoms, VBET_VB_loc
+    loc_valleybottoms = utils.useDirectory(os.path.join(utils.valley_bottom_dir, "VBET_ValleyBottoms"))
+    VBET_VB_loc = os.path.join(utils.valley_bottom_dir, "VBET_ValleyBottoms.tif")
     if not os.path.exists(VBET_VB_loc):
         spacer = "------------------------------------------------"
         print("{}\nERROR - Unable to find valley bottom raster file {}. Initiating VB creation...\n".format(
             spacer, VBET_VB_loc, spacer))
-        VBET_ValleyBottomModel.createVBETValleyBottom(valleybottoms_dir)
+        VBET_ValleyBottomModel.createVBETValleyBottom(utils.valley_bottom_dir)
 
     # LOCATION OF FILE CONTAINING CLASSIFICATION POLYGONS
     loc_class_polygons = os.path.join(utils.inputs_dir, 'classificationTrainingPolygons.shp')
@@ -703,20 +757,8 @@ def createClassification(aoi, dataDir=False, vaa=0.1):
 
     loc_classifier = os.path.join(utils.inputs_dir, "RandomForestClassifier.joblib.pkl")
 
-    predicted_column = "CLASS_PREDICT"
-
-    rf_args = {"maxdepth": 250,
-               "n_est": 100,
-               "n_job": 2,
-               "min_per_leaf": 50,
-               "crit": "entropy"}  # gini or entropy}
-
     rf = getClassifier(loc_classifier, loc_class_polygons, loc_usgs_qquads,
-                                                    utils.base_dir, rf_args, createClassifier=False)
-
-    irods_data_path = "/iplant/home/bhickson/2015/Data"
-    global irods_files
-    irods_sess, irods_files = utils.getFilesonDE(irods_data_path)
+                       utils.base_dir, classifier_args, vaa, riparian_lims, createClassifier=False)
 
     footprints = gpd.read_file(loc_usgs_qquads)
     aoi.to_crs(footprints.crs, inplace=True)
@@ -734,13 +776,15 @@ def createClassification(aoi, dataDir=False, vaa=0.1):
     if len(aoi_qquads) == 0:
         print("Error - no quarter quads found intersecting AOI. Exiting")
         raise Exception
+    else:
+        print("initiating on {} quarter quads".format(len(aoi_qquads)))
 
-    initiateClassification(aoi_qquads, utils.base_dir, rf, rf_args)
+    initiateClassification(aoi_qquads, utils.base_dir, rf, classifier_args, vaa, riparian_lims)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+    #logger = logging.getLogger(__name__)
 
     riolog = rio.logging.getLogger()
     riolog.setLevel(logging.ERROR)
@@ -751,9 +795,23 @@ if __name__ == "__main__":
 
     # In acres, the size of area which will be assessed for density of vegetation classes
     vegetation_assessment_area = 0.1
+    # Set arguments used to define Random Forests classifier
+    rf_args = {"maxdepth": 250,
+               "n_est": 100,
+               "n_job": 2,
+               "min_per_leaf": 50,
+               "crit": "entropy"}  # gini or entropy}
+
+    riplims = {"xero_limit": "StdDev",
+               "meso_limit": 0.7,
+               "hydro_limit": 0.9}
 
     base_data_dir = os.path.abspath(r"M:\Data")
 
     area_of_interest = gpd.read_file(os.path.abspath(r"M:\Data\initial_model_inputs\Ecoregions_AOI.gpkg"))
 
-    createClassification(area_of_interest, dataDir=base_data_dir, vaa=vegetation_assessment_area)
+    createClassification(area_of_interest,
+                         dataDir=base_data_dir,
+                         vaa=vegetation_assessment_area,
+                         classifier_args=rf_args,
+                         riparian_lims=riplims)

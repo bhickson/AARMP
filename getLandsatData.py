@@ -62,9 +62,7 @@ def downloadList(frame, downloadDir):
         count += 1
         print(count, " of ", total_scenes)
         # Print some the product ID
-        print('\tEntityId:', row.entityId)
         #print('\tChecking content: ')
-        print(row)
         #row.geometry = row.geometry.buffer(-0.05)
 
         # Request the html text of the download_url from the amazon server.
@@ -213,7 +211,6 @@ def createCloudMaskedTOA(in_dir, out_dir):
                 scene_count += 1
                 print(scene_count)
                 doy = os.path.basename(dir)[13:16]
-                print("DOY: ", doy)
 
                 doy_dir = os.path.join(out_dir, doy)
                 os.makedirs(doy_dir, exist_ok=True)
@@ -318,11 +315,20 @@ def createCloudMaskedTOA(in_dir, out_dir):
 
 def getLandsatScenes(landsat_dir, acquistionDate_raster, aoi_df, wrs_df, year, cloud_limit):
     with rio.open(acquistionDate_raster) as raster:
+        nd_val = raster.nodata
         acqui_dates = raster.read(1).astype(float)
-        doys = np.unique(acqui_dates).tolist()[1:]  # first value is 0
-        beginning = int(min(doys) - 30)     # minimum acquisition date minus a month for more range
-        end = int(max(doys) + 30)           # maxiumum acquisition date plus a month for more range
+        doys = np.unique(acqui_dates).tolist()
+        doys.remove(nd_val)  # remove nodata values
+        try:
+            doys.remove(0.0)
+        except:
+            pass
 
+        beginning = int(min(doys) - 30)     # minimum acquisition date minus a month for more range
+        end = int(max(doys) + 30)           # maximum acquisition date plus a month for more range
+
+        print("START:", beginning)
+        print("END: ", end)
         start_date = doyToDate(beginning, year)
         end_date = doyToDate(end, year)
 
@@ -396,7 +402,6 @@ def createLandsatPaths_and_Buffer(geodataframe, landsat_dir):
 
     for i in range(0, len(geodataframe_dissolve)):  # first_feature = wrs_dissolve[0:1]
         feat = geodataframe_dissolve[i:i + 1]
-        print(feat.crs)
         outname = "path" + str(feat.index[0]) + "_buffered.shp"
         outfile = os.path.join(outdir, outname)
 
@@ -416,16 +421,13 @@ def clipDOYFiles(in_dir, out_dir, acqui_raster, landsat_dir):
 
     temp_folder = "temp_resized"
     temp_dir = os.path.join(out_dir, temp_folder)
-    print(temp_dir)
     utilities.useDirectory(temp_dir)
 
     tifs = [f for f in glob.iglob(in_dir + "/*.tif")]
-    print(tifs)
     for file in tifs:
         count = 0
 
         fname = os.path.splitext(file)[0]
-        print(fname)
 
         temp_ras = os.path.join(temp_dir, os.path.basename(fname) + "_clipped_resized.tif")
         trans_ras = os.path.join(out_dir, os.path.basename(fname) + "_clipped.tif")
@@ -433,7 +435,6 @@ def clipDOYFiles(in_dir, out_dir, acqui_raster, landsat_dir):
         if not os.path.exists(trans_ras):
             count = 0
             count += 1
-            print("\n", file)
             landsat_path = int(fname[-2:])
             vector = getDissolvedPathShapefile(str(landsat_path), landsat_dir)
 
@@ -475,10 +476,10 @@ def rasterizeVector(invec, outras):
         print("Raster %s already exists. Skipping rasterization from %s." % (outras, invec))
 
 
-def getLandsatTOA(landsat_dir, acqui_raster, aoi_file, wrs_file, cloud_limit, target_epsg="32612"):
-    """ Central function initatates download of landsat tiles
+def getLandsatTOA(landsat_dir, acqui_raster, aoi_file, wrs_file, cloud_limit, year, target_epsg="32612"):
+    """ Central function initiates download of landsat tiles
     which coincide with the NAIP acquisition days from Amazon
-     S3 and then runs and fmask TOA and Cloudremoval algorythm"""
+     S3 and then runs and fmask TOA and Cloud removal algorythm"""
 
     LT1_dir = os.path.join(landsat_dir, "LT1")
     utilities.useDirectory(LT1_dir)
@@ -521,5 +522,5 @@ if __name__ == "__main__":
 
     use_EPSG = "32612"
 
-    getLandsatTOA(landsat_dir, acqui_raster, aoi_file_loc, landsat_wrs2_loc, cloud_limit, target_epsg=use_EPSG)
+    getLandsatTOA(landsat_dir, acqui_raster, aoi_file_loc, landsat_wrs2_loc, cloud_limit, year=year, target_epsg=use_EPSG)
 

@@ -1,3 +1,23 @@
+import warnings
+
+warnings.filterwarnings("ignore")
+
+# Import necessary modules
+from shapely.geometry import Point
+from shapely.ops import linemerge
+import rasterio as rio
+import pandas as pd
+import geopandas as gpd
+import gdal, osr
+import numpy as np
+import os, shutil
+import math
+from rasterio.merge import merge as merge_tool
+from rasterio import features
+import Utilities as utils
+import logging as localLog
+import ValleyBottomRastersPrep
+
 
 # VBET VAllEY BOTTOM MODEL
 #     The final output of the script is placed in nhd_dir as "VBET_ValleyBottoms.tif"
@@ -166,7 +186,7 @@ def rasterizeBufferedFlowlines(features_df, attrib, sample_raster, out_raster, o
 
 
 def createVBETValleyBottom(indir,
-                           slope_thresh_dict={"Small": 2, "Medium": 5, "Large": 22},
+                           slope_thresh_dict={"Small": 22, "Medium": 5, "Large": 2},
                            drainage_thresh_dict={"Low": 40000, "High": 1000000},
                            overwrite=False, cleanup=False):
     """ Creates a single output valley bottom using the VBET methodology. First iterates watersheds directory 
@@ -381,26 +401,6 @@ def createVBETValleyBottom(indir,
 
 
 if __name__ == '__main__':
-    import warnings
-
-    warnings.filterwarnings("ignore")
-
-    # Import necessary modules
-    from shapely.geometry import Point
-    from shapely.ops import linemerge
-    import rasterio as rio
-    import pandas as pd
-    import geopandas as gpd
-    import gdal, osr
-    import numpy as np
-    import os, shutil
-    import math
-    from rasterio.merge import merge as merge_tool
-    from rasterio import features
-    import Utilities as utils
-    import logging as localLog
-    import ValleyBottomRastersPrep
-
     localLog.basicConfig(level=localLog.INFO)
 
     overwrite = True

@@ -30,15 +30,15 @@ def createAcquiRasters(acqui_day_raster, acqui_day_opath, ls_no_data):
         for val in unique:
             # Only iterate valid DOYs
             if val != 0 and val != 32766:
-                print(val)
-                nodata = raster_array == 32766  # value outside of state boundaries
-                # Set pixels with DOY value to landsat no data value so that they will later
-                # know to be filled in by landsat values
-                val_ras = np.where(raster_array == val, ls_no_data, 32764)
-                val_in_state = np.where(raster_array != 32766, val_ras, raster_array)
-
                 ofile = os.path.join(acqui_day_opath, "day_" + str(val) + ".tif")
                 if not os.path.exists(ofile):
+                    print(val)
+                    nodata = raster_array == 32766  # value outside of state boundaries
+                    # Set pixels with DOY value to landsat no data value so that they will later
+                    # know to be filled in by landsat values
+                    val_ras = np.where(raster_array == val, ls_no_data, 32764)
+                    val_in_state = np.where(raster_array != 32766, val_ras, raster_array)
+
                     print("Writing output file", ofile)
                     with rio.open(ofile, 'w', **kwargs) as dst:
                         dst.write(val_in_state.astype(rio.int16))
