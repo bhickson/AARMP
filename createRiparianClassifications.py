@@ -15,7 +15,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import Imputer
 from sklearn.svm import LinearSVC
-from sklearn import metrics
+from sklearn.metrics import accuracy_score, cohen_kappa_score
+from IPython.display import display
 from sklearn.externals import joblib
 from shapely.geometry import Point
 
@@ -29,6 +30,8 @@ import VBET_ValleyBottomModel
 import logging
 from joblib import Parallel, delayed
 from glob import glob
+
+from IPython.display import display
 
 
 def getFullNAIPPath(naip_file, naipdir):
@@ -294,103 +297,103 @@ def createRiparianClass(lc_raster,
         # Get average densities of each class across the whole raster.
 
         # TODO - Update this to evaluate on something more specific than the qquad area
-        dense_veg_array = np.where(class_array == 1, 1, 0)
-        dense_file_avg = np.mean(dense_veg_array)
-        sparse_veg_array = np.where(class_array == 2, 1, 0)
-        sparse_file_avg = np.mean(sparse_veg_array)
+        thick_veg_array = np.where(class_array == 1, 1, 0)
+        thick_file_avg = np.mean(thick_veg_array)
+        thin_veg_array = np.where(class_array == 2, 1, 0)
+        thin_file_avg = np.mean(thin_veg_array)
 
         vaa_meters = veg_assessment_area * 4046.86
         vaa_radius = math.sqrt(vaa_meters / math.pi)
         vaa_diameter_meters = vaa_radius * 2
         vaa_diameter_pixels = vaa_diameter_meters/resx
 
-        sparse_veg_array_localmean = ndimage.uniform_filter(sparse_veg_array.astype(np.float32),
+        thin_veg_array_localmean = ndimage.uniform_filter(thin_veg_array.astype(np.float32),
                                                             size=vaa_diameter_pixels,
                                                             mode='constant')
-        dense_veg_array_localmean = ndimage.uniform_filter(dense_veg_array.astype(np.float32),
+        thick_veg_array_localmean = ndimage.uniform_filter(thick_veg_array.astype(np.float32),
                                                            size=vaa_diameter_pixels,
                                                            mode='constant')
 
         # TODO - Specify these as inputs
         # ------------------------------------------------
         # CRITICAL : Identify the splits where xero, meso, and hydro will be identified
-        # based on density of sparse and thick vegetation
-        sparse_stdev = np.std(sparse_veg_array_localmean)
-        dense_stdev = np.std(sparse_veg_array_localmean)
-        xero_lim = riparian_limits["xero_lim"]
-        meso_lim = riparian_limits["meso_lim"]
-        hydro_lim = riparian_limits["hydro_lim"]
+        # based on density of thin and thick vegetation
+        thin_stdev = np.std(thin_veg_array_localmean)
+        thick_stdev = np.std(thin_veg_array_localmean)
+        xero_lim = riparian_limits["xero_limit"]
+        meso_lim = riparian_limits["meso_limit"]
+        hydro_lim = riparian_limits["hydro_limit"]
 
         if xero_lim == "StdDev":
-            sparse_xero_lowlimit = sparse_file_avg + (1 * sparse_stdev)
-            dense_xero_lowlimit = dense_file_avg + (1 * dense_stdev)
-        elif isinstance(xero_lim, (float)) and xero_lim < 1.0:
-            sparse_xero_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * xero_lim
-            dense_xero_lowlimit = dense_file_avg + (1 - dense_file_avg) * xero_lim
+            thin_xero_lowlimit = thin_file_avg + (1 * thin_stdev)
+            thick_xero_lowlimit = thick_file_avg + (1 * thick_stdev)
+        elif isinstance(xero_lim, (float)) and xero_lim < 1.0 and xero_lim > 0:
+            thin_xero_lowlimit = thin_file_avg + (1 - thin_file_avg) * xero_lim
+            thick_xero_lowlimit = thick_file_avg + (1 - thick_file_avg) * xero_lim
         else:
             print("Unknown type {} for mesoriparian classification limit. Must be 'StdDev' or float from 0 - 1.0")
             raise ValueError
 
         if meso_lim == "StdDev":
-            sparse_meso_lowlimit = sparse_file_avg + (2 * sparse_stdev)
-            dense_meso_lowlimit = dense_file_avg + (2 * dense_stdev)
-        elif isinstance(meso_lim, (float)) and meso_lim < 1.0:
-            sparse_meso_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * meso_lim
-            dense_meso_lowlimit = dense_file_avg + (1 - dense_file_avg) * meso_lim
+            thin_meso_lowlimit = thin_file_avg + (2 * thin_stdev)
+            thick_meso_lowlimit = thick_file_avg + (2 * thick_stdev)
+        elif isinstance(meso_lim, (float)) and meso_lim < 1.0 and meso_lim > 0:
+            thin_meso_lowlimit = thin_file_avg + (1 - thin_file_avg) * meso_lim
+            thick_meso_lowlimit = thick_file_avg + (1 - thick_file_avg) * meso_lim
         else:
             print("Unknown type {} for mesoriparian classification limit. Must be 'StdDev' or float from 0 - 1.0")
             raise ValueError
 
         if hydro_lim == "StdDev":
-            sparse_hydro_lowlimit = sparse_file_avg + (3 * sparse_stdev)
-            dense_hydro_lowlimit = dense_file_avg + (3 * dense_stdev)
-        elif isinstance(hydro_lim, (float)) and hydro_lim < 1.0:
-            sparse_hydro_lowlimit = sparse_file_avg + (1 - sparse_file_avg) * hydro_lim
-            dense_hydro_lowlimit = dense_file_avg + (1 - dense_file_avg) * hydro_lim
+            thin_hydro_lowlimit = thin_file_avg + (3 * thin_stdev)
+            thick_hydro_lowlimit = thick_file_avg + (3 * thick_stdev)
+        elif isinstance(hydro_lim, (float)) and hydro_lim < 1.0 and hydro_lim > 0:
+            thin_hydro_lowlimit = thin_file_avg + (1 - thin_file_avg) * hydro_lim
+            thick_hydro_lowlimit = thick_file_avg + (1 - thick_file_avg) * hydro_lim
         else:
             print("Unknown type {} for hydroriparian classification limit. Must be 'StdDev' or float from 0 - 1.0")
             raise ValueError
         # ------------------------------------------------
 
         # Reassign pixel values based on density assessment
-        sparse_local_xero = np.where(sparse_veg_array_localmean > sparse_xero_lowlimit, 1,
+        thin_local_xero = np.where(thin_veg_array_localmean > thin_xero_lowlimit, 1,
                                      0)  # xero (1) if true, upland (0) if false
-        sparse_local_meso = np.where(sparse_veg_array_localmean > sparse_meso_lowlimit, 2,
+        thin_local_meso = np.where(thin_veg_array_localmean > thin_meso_lowlimit, 2,
                                      0)  # meso (2) if true, upland (0) if false
-        sparse_local_hydro = np.where(sparse_veg_array_localmean > sparse_hydro_lowlimit, 3,
+        thin_local_hydro = np.where(thin_veg_array_localmean > thin_hydro_lowlimit, 3,
                                       0)  # hydro (3) if true, upland (0) if false
         # For some reason can't take numpy.maximum from more than two arrays at once
-        sparse_combine = np.maximum(sparse_local_xero, sparse_local_meso)  # , sparse_local_hydro)
-        sparse_combine = np.maximum(sparse_combine, sparse_local_hydro)
+        thin_combine = np.maximum(thin_local_xero, thin_local_meso)  # , thin_local_hydro)
+        thin_combine = np.maximum(thin_combine, thin_local_hydro)
 
-        dense_local_xero = np.where(dense_veg_array_localmean > dense_xero_lowlimit, 1,
+        thick_local_xero = np.where(thick_veg_array_localmean > thick_xero_lowlimit, 1,
                                     0)  # xero (1) if true, upland (0) if false
-        dense_local_meso = np.where(dense_veg_array_localmean > dense_meso_lowlimit, 2,
+        thick_local_meso = np.where(thick_veg_array_localmean > thick_meso_lowlimit, 2,
                                     0)  # meso (2) if true, upland (0) if false
-        dense_local_hydro = np.where(dense_veg_array_localmean > dense_hydro_lowlimit, 3,
+        thick_local_hydro = np.where(thick_veg_array_localmean > thick_hydro_lowlimit, 3,
                                      0)  # hydro (3) if true, upland (0) if false
         # For some reason can't take numpy.maximum from more than two arrays at once
-        dense_combine = np.maximum(dense_local_xero, dense_local_meso)  # , sparse_local_hydro)
-        dense_combine = np.maximum(dense_combine, dense_local_hydro)
+        thick_combine = np.maximum(thick_local_xero, thick_local_meso)  # , thin_local_hydro)
+        thick_combine = np.maximum(thick_combine, thick_local_hydro)
 
         # COMPARISON OF DENSITY VALUES OF BOTH RASTERS AT EACH PIXEL FOR DETERMINATION (ESSENTAILLY A DECISION TREE)
         # 0 is upland, 1 is xero, 2 is meso, 3 is hydro
-        p = np.where(dense_combine == 0, np.where(sparse_combine == 0, 0, 0), 0)  # if dense is 0 and sparse is 0, 0
-        o = np.where(dense_combine == 0, np.where(sparse_combine == 1, 1, p), p)  # if dense is 0 and sparse is 1, 1, otherwise p
-        n = np.where(dense_combine == 0, np.where(sparse_combine == 2, 2, o), o)  # if dense is 0 and sparse is 2, 2, otherwise o
-        m = np.where(dense_combine == 0, np.where(sparse_combine == 3, 3, n), n)  # if dense is 0 and sparse is 3, 3, otherwise n
-        l = np.where(dense_combine == 1, np.where(sparse_combine == 0, 1, m), m)  # if dense is 1 and sparse is 0, 1, otherwise m
-        k = np.where(dense_combine == 1, np.where(sparse_combine == 1, 1, l), l)  # if dense is 1 and sparse is 1, l, otherwise l
-        j = np.where(dense_combine == 1, np.where(sparse_combine == 2, 2, k), k)  # if dense is 1 and sparse is 2, 2, otherwise k
-        i = np.where(dense_combine == 1, np.where(sparse_combine == 3, 3, j), j)  # if dense is 1 and sparse is 3, 3, otherwise j
-        h = np.where(dense_combine == 2, np.where(sparse_combine == 0, 1, i), i)  # if dense is 2 and sparse is 0, 1, otherwise i
-        g = np.where(dense_combine == 2, np.where(sparse_combine == 1, 2, h), h)  # if dense is 2 and sparse is 1, 2, otherwise h
-        f = np.where(dense_combine == 2, np.where(sparse_combine == 2, 2, g), g)  # if dense is 2 and sparse is 2, 2, otherwise g
-        e = np.where(dense_combine == 2, np.where(sparse_combine == 3, 3, f), f)  # if dense is 2 and sparse is 3, 3, otherwise g
-        d = np.where(dense_combine == 3, np.where(sparse_combine == 0, 2, e), e)  # if dense is 3 and sparse is 0, 2, otherwise e
-        c = np.where(dense_combine == 3, np.where(sparse_combine == 1, 2, d), d)  # if dense is 3 and sparse is 1, 2, otherwise d
-        b = np.where(dense_combine == 3, np.where(sparse_combine == 2, 3, c), c)  # if dense is 3 and sparse is 2, 3, otherwise c
-        riparian = np.where(dense_combine == 3, np.where(sparse_combine == 3, 3, b), b)  # if dense is 3 and sparse is 3, 3, otherwise b
+        p = np.where(thick_combine == 0, np.where(thin_combine == 0, 0, 0), 0)  # if thick is 0 and thin is 0, 0
+        o = np.where(thick_combine == 0, np.where(thin_combine == 1, 1, p), p)  # if thick is 0 and thin is 1, 1, otherwise p
+        n = np.where(thick_combine == 0, np.where(thin_combine == 2, 2, o), o)  # if thick is 0 and thin is 2, 2, otherwise o
+        m = np.where(thick_combine == 0, np.where(thin_combine == 3, 3, n), n)  # if thick is 0 and thin is 3, 3, otherwise n
+        l = np.where(thick_combine == 1, np.where(thin_combine == 0, 1, m), m)  # if thick is 1 and thin is 0, 1, otherwise m
+        k = np.where(thick_combine == 1, np.where(thin_combine == 1, 1, l), l)  # if thick is 1 and thin is 1, l, otherwise l
+        j = np.where(thick_combine == 1, np.where(thin_combine == 2, 2, k), k)  # if thick is 1 and thin is 2, 2, otherwise k
+        i = np.where(thick_combine == 1, np.where(thin_combine == 3, 3, j), j)  # if thick is 1 and thin is 3, 3, otherwise j
+        h = np.where(thick_combine == 2, np.where(thin_combine == 0, 1, i), i)  # if thick is 2 and thin is 0, 1, otherwise i
+        g = np.where(thick_combine == 2, np.where(thin_combine == 1, 2, h), h)  # if thick is 2 and thin is 1, 2, otherwise h
+        f = np.where(thick_combine == 2, np.where(thin_combine == 2, 2, g), g)  # if thick is 2 and thin is 2, 2, otherwise g
+        e = np.where(thick_combine == 2, np.where(thin_combine == 3, 3, f), f)  # if thick is 2 and thin is 3, 3, otherwise g
+        d = np.where(thick_combine == 3, np.where(thin_combine == 0, 2, e), e)  # if thick is 3 and thin is 0, 2, otherwise e
+        c = np.where(thick_combine == 3, np.where(thin_combine == 1, 2, d), d)  # if thick is 3 and thin is 1, 2, otherwise d
+        b = np.where(thick_combine == 3, np.where(thin_combine == 2, 3, c), c)  # if thick is 3 and thin is 2, 3, otherwise c
+        riparian = np.where(thick_combine == 3, np.where(thin_combine == 3, 3, b), b)  # if thick is 3 and thin is 3, 3, otherwise b
 
         kwargs.update(
             dtype=np.uint8,
@@ -404,7 +407,7 @@ def createRiparianClass(lc_raster,
             vb_array = vb_raster.read(1).astype(np.float32)
 
         # print("Clipping to Valley Bottoms")
-        clipped_riparian = np.where(vb_array > 1, riparian, 0)
+        clipped_riparian = np.where(vb_array >= 1, riparian, 0)
 
         with rio.open(riparian_class_qquad, 'w', **kwargs) as dst:
             dst.write_band(1, clipped_riparian.astype(np.uint8))
@@ -592,11 +595,8 @@ def getClassifier(classifier_file, training_poly, usgs_qquads, data_directory, a
 
         training_points, rf_rasters = createTrainingData(training_poly, usgs_qquads, data_directory)
 
-        # Split the points data frame into train and test
-        training_data, testing_data = train_test_split(training_points, test_size=0.3)
-
-        # INITIALIZE COLUMN FOR PREDICTED CLASSIFICATION VALUES
-        testing_data[predicted_column] = "Null"
+        # Split the points data frame into train and test 70/30. Random_state is arbitrary int.
+        training_data, testing_data = train_test_split(training_points, test_size=0.3, random_state=7)
 
         remove_landsat = False
 
@@ -621,10 +621,20 @@ def getClassifier(classifier_file, training_poly, usgs_qquads, data_directory, a
                                           n_jobs=args["n_job"], min_samples_leaf=args["min_per_leaf"],
                                           criterion=args["crit"])
 
-        #X = Imputer().fit_transform(train_data[rf_rasters].dropna())
-
         rf_model.fit(training_data[rf_rasters].dropna(),
                      training_data[rf_rasters + ["Class"]].dropna()["Class"])
+
+
+        test_pred = rf_model.predict(testing_data[rf_rasters])
+        accu = accuracy_score(testing_data["Class"], test_pred)
+        kappa = cohen_kappa_score(testing_data["Class"], test_pred)
+        confusion_matrix = pd.crosstab(testing_data["Class"], test_pred, rownames=['Actual Classes'],
+                                       colnames=['Predicted Classes'])
+
+        print("Mean accuracy score: {}".format(accu))
+        print("Kappa Score: {}".format(kappa))
+
+        display(confusion_matrix)
 
         logging.info("Finished Fitting in", datetime.now() - rf_start)
 
@@ -719,7 +729,7 @@ def initiateClassification(quads, base_date_directory, model, model_args, veg_aa
     Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
         (delayed(segmentImage)(naip_file, utils.segmentedImagesDir, return_data=False) for naip_file in quads)
 
-    #or naip_file in quads:
+    #for naip_file in quads:
     #   createClassifiedFile(naip_file, base_date_directory, model, model_args, overwrite = False)
     Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
         (delayed(createClassifiedFile)(naip_file, base_date_directory, model, model_args, overwrite=False) for naip_file in quads)

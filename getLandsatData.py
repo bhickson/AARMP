@@ -232,7 +232,7 @@ def createCloudMaskedTOA(in_dir, out_dir):
                     reflective_bands = [f for f in glob.iglob(
                         landsat_scene_dir + "/LC8*_B[1-7,9].TIF")]  # GET ALL REFLECTANCE TIFS IN THE MTLs DIRECTORY
                     thermal_bands = [f for f in glob.iglob(
-                        landsat_scene_dir + "/LC8*_B1[0,1].TIF")]  # GET ALL REFLECTANCE TIFS IN THE MTLs DIRECTORYreflective_bands)
+                        landsat_scene_dir + "/LC8*_B1[0,1].TIF")]  # GET ALL REFLECTANCE TIFS IN THE MTLs DIRECTORY
                     mtl_file = [f for f in glob.iglob(landsat_scene_dir + "/*_MTL.txt")][
                         0]  # GET ALL REFLECTANCE TIFS IN THE MTLs DIRECTORY
 

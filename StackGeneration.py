@@ -190,7 +190,6 @@ def getSubSetSlope(naip_path, slope_file, odir, overwrite=False):
 
     slope_opath = os.path.join(odir, ofile)
 
-    print(slope_opath)
     if not os.path.exists(slope_opath) or overwrite:
         start = datetime.now()
         reference_f = gdal.Open(naip_path)
