@@ -255,6 +255,8 @@ for tf in sub_files:
         shutil.copy(fpath, outdir)
 """
 
-import datetime
 
-print(datetime.datetime.today().strftime('%Y%m%d'))
+l = [1,2,3,4,5,6,7,8,9,0]
+
+file = "RiparianClassification_3111001_nw.tif"
+print(file[-14:-4])
