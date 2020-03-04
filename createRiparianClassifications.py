@@ -729,9 +729,9 @@ def initiateClassification(quads, base_date_directory, model, model_args, veg_aa
     Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
         (delayed(segmentImage)(naip_file, utils.segmentedImagesDir, return_data=False) for naip_file in quads)
 
-    #for naip_file in quads:
+    #or naip_file in quads:
     #   createClassifiedFile(naip_file, base_date_directory, model, model_args, overwrite = False)
-    Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
+    Parallel(n_jobs=2, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
         (delayed(createClassifiedFile)(naip_file, base_date_directory, model, model_args, overwrite=False) for naip_file in quads)
 
     Parallel(Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=base_date_directory) \
@@ -775,11 +775,11 @@ def createClassification(aoi, classifier_args, riparian_lims, dataDir=False, vaa
 
     print("\nIntersecting quarter-quad grid with AOI to find relevant quarter-quads")
     aoi_qquads = []
-    for j, arow in aoi.iterrows():
-        for i, row in footprints.iterrows():
-            if row.geometry.intersects(arow.geometry):
-                fpath = getFullNAIPPath(row.QUADID, utils.naip_dir)
-                aoi_qquads.append(fpath)
+    #for j, arow in aoi.iterrows():
+    for i, row in footprints.iterrows():
+        #if row.geometry.intersects(arow.geometry):
+        fpath = getFullNAIPPath(row.QUADID, utils.naip_dir)
+        aoi_qquads.append(fpath)
 
     print("Creating {} classified files for input AOI".format(len(aoi_qquads)))
     #print("AOI QQUADS\n{}\n".format(aoi_qquads))

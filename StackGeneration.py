@@ -560,20 +560,19 @@ if __name__ == '__main__':
 
     footprints = gpd.read_file(loc_usgs_qquads)
     aoi.to_crs(footprints.crs, inplace=True)
-
     aoi_qquads = []
     for i, row in footprints.iterrows():
         for j, arow in aoi.iterrows():
             if row.geometry.intersects(arow.geometry):
-                fpath = utils.getFullNAIPPath(row.QUADID, os.path.join(bdd, "NAIP"), irods_naip_files)
+                fpath = utils.getFullNAIPPath(row.QUADID, os.path.join(bdd, "NAIP"))#, irods_naip_files)
                 basename = os.path.basename(fpath)
                 aoi_qquads.append(fpath)
                 for f in existing_ts:
                     if basename.split(".")[0] in f:
                         aoi_qquads.remove(fpath)
 
-    for file in aoi_qquads:
-        tryGenerateStack(file)
+    #for file in aoi_qquads:
+    #    tryGenerateStack(file)
 
     print("\nBeginning image segmentation for {} QQuads\n".format(len(aoi_qquads)))
     Parallel(n_jobs=3, max_nbytes=None, verbose=30, backend='loky', temp_folder=segmentedImagesDir) \
